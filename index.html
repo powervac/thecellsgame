@@ -66,7 +66,6 @@
 </div>
 <button id="restart" class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 3v5h-5"/></svg>Заново</button>
 <button id="mute" class="pill" title="Звук"><svg class="on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg><svg class="off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="m16 9 5 6M21 9l-5 6"/></svg></button>
-<div id="hint" class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 11v6"/><circle cx="12" cy="7.4" r=".6" fill="currentColor"/></svg><span id="hintText">Зажмите и перетащите, чтобы атаковать</span></div>
 <canvas id="mini" width="400" height="240"></canvas>
 <div id="overlay">
   <div class="card">
@@ -351,6 +350,7 @@
   let state = 'menu';            // menu | play | end
   let diff = 'medium';
   let botTimer = { 2: 0, 3: 0 }, botMoveTimer = { 2: 0, 3: 0 };
+  const groups = {};                               // группы клеток по цифрам 0-9
   let moveSel = new Set(), lastTap = null, downInfo = null, box = null;
   let sel = new Set(), tgts = [], dragging = false, pointer = { x:0, y:0 };
   let last = 0;
@@ -480,6 +480,7 @@
     cells = genCells();
     if (dynMode) for (const c of cells) { c.size = dynTarget(c); c.r = radiusDyn(Math.round(c.size)); }
     squads = []; fx = [];
+    for (const k in groups) delete groups[k];
     sel = new Set(); tgts = []; dragging = false; moveSel = new Set(); lastTap = null;
     if (mapMode === 'big') {
       zoom = clampZ(innerWidth / 1300);
@@ -869,7 +870,19 @@
 
   canvas.addEventListener('contextmenu', e => e.preventDefault());
   addEventListener('keydown', e => {
-    if (e.key === 'Escape') { moveSel = new Set(); }
+    if (e.key === 'Escape') { moveSel = new Set(); sel = new Set(); tgts = []; box = null; }   // снять выделение со всех
+    const dg = /^(?:Digit|Numpad)([0-9])$/.exec(e.code);
+    if (dg && state === 'play') {
+      const n = dg[1];
+      if (e.ctrlKey || e.altKey) {                                  // Ctrl/Alt + цифра: запомнить выделенные клетки как группу
+        groups[n] = [...moveSel].filter(c => c.owner === 1);
+        if (groups[n].length) fx.push({ k: 'ring', x: groups[n][0].x, y: groups[n][0].y, col: '241,245,249', t: 0, life: .4, r0: groups[n][0].r, r1: groups[n][0].r + 14 });
+      } else if (groups[n]) {                                       // цифра: выбрать группу (погибшие и потерянные клетки отсеиваются)
+        groups[n] = groups[n].filter(c => c.owner === 1 && cells.includes(c));
+        moveSel = new Set(groups[n]);
+      }
+      e.preventDefault();
+    }
     if (e.code === 'Space' || e.code === 'Home') {                 // вернуть камеру к своим клеткам
       const mine = cells.filter(c => c.owner === 1);
       if (mine.length) { const b = mine.reduce((a, c) => (c.size > a.size ? c : a)); centerOn(b.x, b.y); }
@@ -1257,10 +1270,6 @@
     };
     const [bc, bu] = stat(1), [rc, ru] = stat(2), [gc, gu] = stat(3);
     setTxt('bc', bc); setTxt('bu', bu); setTxt('rc', rc); setTxt('ru', ru); setTxt('gc', gc); setTxt('gu', gu);
-    const ht = dragging ? 'Отпустите на цели, чтобы отправить единицы'
-      : moveSel.size ? 'Выделено: ' + moveSel.size + '. Левая: тяните к цели — атака. Правая кнопка по пустому месту — лететь туда (Shift — добавить точку маршрута), по своей клетке — прекратить отправку. Esc — снять'
-      : 'Зажмите и перетащите, чтобы атаковать';
-    if ($('hintText').textContent !== ht) $('hintText').textContent = ht;
   }
 
   function frame(t) {
