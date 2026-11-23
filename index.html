@@ -1,0 +1,1217 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>The Cells Game</title>
+<style>
+  :root { --bg:#030818; --panel:rgba(8,18,48,.88); --line:rgba(120,165,255,.35); --text:#e8eeff; --muted:#93a4cf; --blue:#2f8cff; --red:#ff4545; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--text);
+    font-family:"Segoe UI",system-ui,-apple-system,Roboto,sans-serif; overflow:hidden; user-select:none; -webkit-user-select:none; }
+  canvas#c { position:fixed; inset:0; width:100%; height:100%; touch-action:none; display:block; }
+  .pill { position:fixed; background:var(--panel); border:1.5px solid var(--line); border-radius:22px;
+    box-shadow:0 0 18px rgba(40,90,220,.25), inset 0 0 14px rgba(60,110,255,.10); }
+  #hud { top:18px; left:22px; display:flex; align-items:center; padding:0 22px; height:46px; font-size:18px; font-weight:600;
+    font-variant-numeric:tabular-nums; pointer-events:none; white-space:nowrap; }
+  #hud .sep { width:1px; height:24px; background:var(--line); margin:0 18px; }
+  #hud .who { display:flex; align-items:center; gap:10px; }
+  #hud b { font-weight:700; }
+  .dot { width:20px; height:20px; border-radius:50%; display:inline-block; }
+  .dot.b { background:radial-gradient(circle at 35% 30%, #8cc4ff, #1f6bff 70%); box-shadow:0 0 12px 2px rgba(47,140,255,.8); }
+  .dot.g { background:radial-gradient(circle at 35% 30%, #b4f7d2, #19b866 70%); box-shadow:0 0 12px 2px rgba(61,220,132,.8); }
+  .dot.r { background:radial-gradient(circle at 35% 30%, #ff9b9b, #ff2f2f 70%); box-shadow:0 0 12px 2px rgba(255,69,69,.8); }
+  #restart { top:18px; right:22px; height:46px; padding:0 22px 0 18px; display:flex; align-items:center; gap:12px;
+    color:var(--text); font:600 18px/1 "Segoe UI",system-ui,sans-serif; cursor:pointer; }
+  #restart:hover { border-color:rgba(160,195,255,.8); box-shadow:0 0 22px rgba(60,120,255,.45); }
+  #restart svg { width:26px; height:26px; }
+  #mute { top:18px; right:168px; width:46px; height:46px; display:flex; align-items:center; justify-content:center; color:var(--text); cursor:pointer; padding:0; }
+  #mute:hover { border-color:rgba(160,195,255,.8); box-shadow:0 0 22px rgba(60,120,255,.45); }
+  #mute svg { width:24px; height:24px; }
+  #mute .off { display:none; } #mute.muted .on { display:none; } #mute.muted .off { display:block; }
+  #hint { bottom:22px; left:22px; display:flex; align-items:center; gap:14px; padding:10px 22px 10px 16px;
+    font-size:15px; line-height:1.25; max-width:min(60vw,330px); pointer-events:none; }
+  #hint svg { width:28px; height:28px; flex:none; opacity:.9; }
+  #mini { position:fixed; bottom:22px; right:22px; width:200px; height:120px; border-radius:14px; pointer-events:auto; cursor:pointer;
+    border:1.5px solid var(--line); background:var(--panel); box-shadow:0 0 18px rgba(40,90,220,.25); }
+  #overlay { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(2,6,22,.62);
+  }
+  #overlay.hidden { display:none; }
+  .card { background:linear-gradient(160deg, rgba(14,30,78,.92), rgba(6,14,40,.95)); border:1.5px solid var(--line);
+    padding:28px 30px; border-radius:24px; text-align:center; width:min(92vw,420px);
+    box-shadow:0 0 40px rgba(40,100,255,.3), 0 14px 50px rgba(0,0,0,.6); }
+  h1 { margin:0 0 8px; font-size:28px; letter-spacing:.5px; text-shadow:0 0 18px rgba(80,150,255,.7); }
+  p { margin:6px 0 18px; color:var(--muted); font-size:14px; line-height:1.5; }
+  .label { font-size:12px; letter-spacing:.8px; text-transform:uppercase; color:var(--muted); margin:2px 0 6px; }
+  .row { display:flex; gap:8px; justify-content:center; margin-bottom:18px; }
+  .row button { flex:1; padding:10px 0; border-radius:14px; border:1.5px solid rgba(120,165,255,.25); background:rgba(8,18,48,.8);
+    color:var(--text); cursor:pointer; font-size:15px; }
+  .row button.on { border-color:var(--blue); background:rgba(30,80,190,.45); box-shadow:0 0 14px rgba(47,140,255,.5); }
+  .play { width:100%; padding:13px; border:0; border-radius:16px; color:#fff; font-size:17px; font-weight:700; cursor:pointer;
+    background:linear-gradient(180deg,#4aa0ff,#1f62e8); box-shadow:0 0 22px rgba(47,140,255,.6); }
+  .play:hover { filter:brightness(1.12); }
+  @media (max-width:640px) { #mute{top:10px;right:118px;width:40px;height:40px} #hud { font-size:12px; padding:0 10px; height:40px; top:10px; left:10px } #hud .sep{margin:0 8px} #hud .sep{margin:0 10px}
+    .dot{width:11px;height:11px} #restart{top:10px;right:10px;height:40px;font-size:14px;padding:0 14px} #restart svg{width:20px;height:20px}
+    #hint{font-size:12px;left:10px;bottom:10px} #mini{width:140px;height:84px;right:10px;bottom:10px} }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud" class="pill">
+  <span class="who"><span class="dot b"></span>Вы: <b id="bc">0</b> кл. / <b id="bu">0</b></span>
+  <span class="sep"></span>
+  <span class="who"><span class="dot r"></span>Красный: <b id="rc">0</b> кл. / <b id="ru">0</b></span>
+  <span class="sep"></span>
+  <span class="who"><span class="dot g"></span>Зелёный: <b id="gc">0</b> кл. / <b id="gu">0</b></span>
+</div>
+<button id="restart" class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 3v5h-5"/></svg>Заново</button>
+<button id="mute" class="pill" title="Звук"><svg class="on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg><svg class="off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="m16 9 5 6M21 9l-5 6"/></svg></button>
+<div id="hint" class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 11v6"/><circle cx="12" cy="7.4" r=".6" fill="currentColor"/></svg><span id="hintText">Зажмите и перетащите, чтобы атаковать</span></div>
+<canvas id="mini" width="400" height="240"></canvas>
+<div id="overlay">
+  <div class="card">
+    <h1 id="title">The Cells Game</h1>
+    <p id="msg">Зажмите свою (синюю) клетку и отпустите на цели: единицы вылетят цепочкой. Проведите через другие свои клетки, чтобы атаковать сразу из всех. Тап по своей клетке, затем тап по пустому месту — переместить её. Захватите все клетки красного и зелёного ботов: они воюют и друг с другом.</p>
+    <div class="label">Карта</div>
+    <div class="row" id="mapRow">
+      <button data-m="normal">Обычная</button>
+      <button data-m="big">Большая ×9</button>
+    </div>
+    <div class="label">Сложность</div>
+    <div class="row" id="diffRow">
+      <button data-d="easy">Лёгкий</button>
+      <button data-d="medium" class="on">Средний</button>
+      <button data-d="hard">Сложный</button>
+    </div>
+    <button class="play" id="playBtn">Играть</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  // режимы карты: обычная (одно поле) и большая (в 9 раз по площади, со скроллингом)
+  const MAPS = {
+    normal: { W: 1200, H: 720,  N: 20,  SPEED: 150, edge: 75,  spread: 90,  greenY: 14, greenX: 1 / 6 },
+    big:    { W: 3600, H: 2160, N: 180, SPEED: 200, edge: 160, spread: 160, greenY: 60, greenX: 1 / 3 },
+  };
+  let mapMode = 'big', MAP = MAPS.big;
+  try { if (localStorage.getItem('cells-map') in MAPS) mapMode = localStorage.getItem('cells-map'); } catch (e) {}
+  MAP = MAPS[mapMode];
+  let W = MAP.W, H = MAP.H;
+  const PAL = {
+    1: { edge: '#3b9bff', s0: 'rgba(8,36,110,.55)',  s1: 'rgba(18,70,200,.35)',  s2: 'rgba(70,150,255,.75)' },
+    2: { edge: '#ff4d4d', s0: 'rgba(110,8,20,.92)',  s1: 'rgba(190,18,30,.88)',  s2: 'rgba(255,80,80,.98)' },
+    3: { edge: '#3ddc84', s0: 'rgba(4,70,38,.92)',   s1: 'rgba(16,150,80,.85)',  s2: 'rgba(90,240,150,.98)' },
+  };
+  const BOTS = [2, 3];
+  const UCOL = { 1: '47,140,255', 2: '255,59,59', 3: '47,224,127' };
+  // ---------- звук (синтез через Web Audio, без файлов) ----------
+  let AC = null, master = null, noiseBuf = null, hum = null, muted = false, lastT = { hit: 0, join: 0, move: 0 };
+  try { muted = localStorage.getItem('cells-muted') === '1'; } catch (e) {}
+  function audio() {
+    if (!AC) {
+      try {
+        AC = new (window.AudioContext || window.webkitAudioContext)();
+        master = AC.createGain(); master.gain.value = muted ? 0 : .55; master.connect(AC.destination);
+        noiseBuf = AC.createBuffer(1, AC.sampleRate * 1.5, AC.sampleRate);
+        const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+        startHum();
+      } catch (e) { AC = null; }
+    }
+    if (AC && AC.state === 'suspended') AC.resume();
+    return AC;
+  }
+  function out(x) {                                  // стерео-панорама по положению на поле
+    if (!AC.createStereoPanner) return master;
+    const p = AC.createStereoPanner(); p.pan.value = Math.max(-1, Math.min(1, ((x - cam.x) * zoom / innerWidth) * 2 - 1)) * .7;
+    p.connect(master); return p;
+  }
+  let sndScale = 1;                                    // громкость события по расстоянию до экрана
+  const sv = c => inView(c.x, c.y, 0) ? 1 : inView(c.x, c.y, 500) ? .3 : 0;
+  const safe = fn => (...a) => { try { return fn(...a); } catch (e) { console.warn('audio', e); } };
+  function tone(x, f0, f1, dur, type, vol) {
+    if (!audio() || muted) return;
+    vol *= sndScale;
+    if (vol < 0.0002) return;
+    const t = AC.currentTime, o = AC.createOscillator(), g = AC.createGain();
+    o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + .008); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(out(x)); o.start(t); o.stop(t + dur + .02);
+  }
+  function noise(x, dur, vol, f0, f1, type, delay, q) {
+    if (!audio() || muted) return;
+    vol *= sndScale;
+    if (vol < 0.0002) return;
+    const t = AC.currentTime + (delay || 0), src = AC.createBufferSource(), fl = AC.createBiquadFilter(), g = AC.createGain();
+    src.buffer = noiseBuf; fl.type = type || 'lowpass'; fl.Q.value = q || .7;
+    fl.frequency.setValueAtTime(f0, t); fl.frequency.exponentialRampToValueAtTime(Math.max(40, f1), t + dur);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + .006); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(fl); fl.connect(g); g.connect(out(x)); src.start(t, Math.random()); src.stop(t + dur + .03);
+  }
+  const nowMs = () => performance.now();
+  function sfxHit(kind, c) { try { sfxHit0(kind, c); } catch (e) { console.warn('audio', e); } }
+  function sfxHit0(kind, c) {
+    sndScale = sv(c); if (!sndScale) return;
+    const t = nowMs();
+    if (kind === 'join') {
+      if (t - lastT.join < 90) return; lastT.join = t;
+      tone(c.x, 880 + Math.random() * 120, 1100, .07, 'sine', .035);
+    } else if (kind === 'hit') {
+      if (t - lastT.hit < 45) return; lastT.hit = t;
+      const f = 420 + Math.random() * 160 - c.size;       // крупные клетки звучат ниже
+      tone(c.x, f, f * .45, .11, 'triangle', .11);
+      noise(c.x, .05, .05, 3500, 1200, 'highpass');
+    }
+  }
+  // реверберация (хвост взрыва) и мягкая перегрузка для «грязного» треска
+  let rev = null, shaper = null;
+  function getRev() {
+    if (rev) return rev;
+    const len = AC.sampleRate * 1.8, imp = AC.createBuffer(2, len, AC.sampleRate);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = imp.getChannelData(ch);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6);
+    }
+    const cv = AC.createConvolver(); cv.buffer = imp;
+    const g = AC.createGain(); g.gain.value = .55;
+    cv.connect(g); g.connect(master);
+    rev = cv;
+    const curve = new Float32Array(256);
+    for (let i = 0; i < 256; i++) { const x = i / 128 - 1; curve[i] = Math.tanh(x * 3.2); }
+    shaper = AC.createWaveShaper(); shaper.curve = curve;
+    return rev;
+  }
+
+  // взрыв при захвате: резкий хлопок + шипящее тело + осколки + хвост эха.
+  // Низких «барабанных» частот нет вообще. Чем больше клетка, тем глуше (срезаются верха) и дольше хвост
+  function sfxExplode(c) { try { sfxExplode0(c); } catch (e) { console.warn('audio', e); } }
+  function sfxExplode0(c) {
+    if (!audio() || muted) return;
+    sndScale = sv(c); if (!sndScale) return;
+    const k = (c.size - 10) / 40;                    // 0 (клетка 10) ... 1 (клетка 50)
+    const dest = out(c.x), wet = getRev();
+    const t0 = AC.currentTime;
+    const layer = (type, f0, f1, dur, vol, delay, q, dist, send) => {
+      const vv = Math.max(.0002, vol * sndScale);
+      const t = t0 + delay;
+      const src = AC.createBufferSource(), fl = AC.createBiquadFilter(), g = AC.createGain();
+      src.buffer = noiseBuf; fl.type = type; fl.Q.value = q;
+      fl.frequency.setValueAtTime(f0, t); fl.frequency.exponentialRampToValueAtTime(Math.max(200, f1), t + dur);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vv, t + .004); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      let node = fl; src.connect(fl);
+      if (dist) { const ws = AC.createWaveShaper(); ws.curve = shaper.curve; fl.connect(ws); node = ws; }
+      node.connect(g); g.connect(dest);
+      if (send) { const sg = AC.createGain(); sg.gain.value = send; g.connect(sg); sg.connect(wet); }
+      src.start(t, Math.random() * .8); src.stop(t + dur + .05);
+    };
+    // 1. резкий хлопок
+    layer('highpass', 1800, 500, .06, .45 * (1 - .55 * k), 0, .7, false, .3);
+    // 2. тело взрыва: широкополосный шум, срезаемый вниз; у больших клеток верха меньше
+    layer('lowpass', 7500 - 5200 * k, 650 - 250 * k, .45 + .55 * k, .55, .004, .9, true, .7);
+    // 3. шипящая середина
+    layer('bandpass', 2200 - 1200 * k, 500, .3 + .3 * k, .3, .012, .8, false, .5);
+    // 4. осколки: короткие щелчки, разбросанные по времени
+    const n = 9 - Math.round(3 * k);
+    for (let i = 0; i < n; i++) {
+      layer('bandpass', (1400 + Math.random() * 2400) * (1 - .5 * k), 500, .05 + Math.random() * .04, .12 * (1 - .5 * k),
+            .06 + Math.random() * (.45 + .4 * k), 1.8, false, .4);
+    }
+  }
+  function sfxLaunchMove(c, own) { try { sfxLaunchMove0(c, own); } catch (e) { console.warn('audio', e); } }
+  function sfxLaunchMove0(c, own) {
+    sndScale = own ? 1 : sv(c);
+    if (!sndScale) return;                   // старт полёта клетки
+    tone(c.x, 180, 520 - c.size * 4, .35, 'sine', own ? .09 : .04);
+  }
+  function startHum() {                              // непрерывный гул, пока клетки летят
+    const src = AC.createBufferSource(), fl = AC.createBiquadFilter(), g = AC.createGain();
+    src.buffer = noiseBuf; src.loop = true; fl.type = 'bandpass'; fl.Q.value = 3; fl.frequency.value = 300; g.gain.value = 0;
+    src.connect(fl); fl.connect(g); g.connect(master); src.start();
+    hum = { g, fl };
+  }
+  function updateHum() {
+    if (!AC || !hum) return;
+    let n = 0, sp = 0;
+    if (state === 'play') for (const c of cells) if (c.dest) { n++; sp += moveSpeed(c); }
+    const vol = muted ? 0 : Math.min(.14, n * .04);
+    hum.g.gain.setTargetAtTime(vol, AC.currentTime, .12);
+    if (n) hum.fl.frequency.setTargetAtTime(160 + (sp / n) * 6, AC.currentTime, .2);
+  }
+  function setMuted(m) {
+    muted = m;
+    $('mute').classList.toggle('muted', m);
+    try { localStorage.setItem('cells-muted', m ? '1' : '0'); } catch (e) {}
+    if (master) master.gain.value = m ? 0 : .55;
+  }
+
+  let fx = [];                                   // визуальные эффекты: кольца, искры, волны
+
+  function burst(x, y, ang, spread, n, col, spd, life) {
+    for (let i = 0; i < n && fx.length < 400; i++) {
+      const a = ang + (Math.random() - .5) * spread;
+      const v = spd * (.5 + Math.random() * .8);
+      fx.push({ k: 'p', x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, col, t: 0, life: life * (.7 + Math.random() * .6), r: 1.6 + Math.random() * 1.6 });
+    }
+  }
+
+  // эффект попадания единицы в клетку: kind = 'join' | 'hit' | 'capture'
+  function hitFx(u, c, kind) {
+    const col = UCOL[u.owner];
+    const ang = Math.atan2(u.y - c.y, u.x - c.x);
+    const px = c.x + Math.cos(ang) * c.r, py = c.y + Math.sin(ang) * c.r;
+    if (kind === 'capture') sfxExplode(c); else sfxHit(kind, c);
+    if (fx.length < 400) fx.push({ k: 'ring', x: px, y: py, col, t: 0, life: .38, r0: 2, r1: kind === 'join' ? 10 : 17 });
+    if (kind === 'join') {
+      burst(px, py, ang + Math.PI, 1.4, 2, col, 40, .35);
+      c.flash = Math.min(1, c.flash + .15);
+    } else {
+      burst(px, py, ang, 2.0, kind === 'hit' ? 5 : 8, kind === 'hit' ? '255,255,255' : col, 95, .5);
+      c.flash = Math.min(1, c.flash + .35);
+    }
+    if (kind === 'capture') {
+      c.flash = 1;
+      fx.push({ k: 'wave', x: c.x, y: c.y, col, t: 0, life: .8, r0: c.r, r1: c.r + 70 });
+      fx.push({ k: 'wave', x: c.x, y: c.y, col, t: -.12, life: .8, r0: c.r, r1: c.r + 45 });
+      for (let i = 0; i < 16; i++) burst(c.x + Math.cos(i * .3927) * c.r, c.y + Math.sin(i * .3927) * c.r, i * .3927, .3, 1, col, 90, .6);
+    }
+  }
+
+  function updateFx(dt) {
+    for (const e of fx) {
+      e.t += dt;
+      if (e.k === 'p') { e.x += e.vx * dt; e.y += e.vy * dt; e.vx *= .94; e.vy *= .94; }
+    }
+    fx = fx.filter(e => e.t < e.life);
+    for (const c of cells) if (c.flash > 0) c.flash = Math.max(0, c.flash - dt * 2.8);
+  }
+
+  function drawFx() {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const e of fx) {
+      if (e.t < 0 || !inView(e.x, e.y, 120)) continue;
+      const k = e.t / e.life, a = 1 - k;
+      if (e.k === 'p') {
+        ctx.fillStyle = 'rgba(' + e.col + ',' + (a * .95) + ')';
+        ctx.beginPath(); ctx.arc(e.x, e.y, e.r * (1 - k * .5), 0, Math.PI * 2); ctx.fill();
+      } else {
+        const r = e.r0 + (e.r1 - e.r0) * (1 - Math.pow(1 - k, 2));
+        ctx.lineWidth = e.k === 'wave' ? 4 * a + 1 : 2.5 * a + .6;
+        ctx.strokeStyle = 'rgba(' + e.col + ',' + (a * (e.k === 'wave' ? .8 : 1)) + ')';
+        ctx.beginPath(); ctx.arc(e.x, e.y, r, 0, Math.PI * 2); ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+  const PADT = 40, PADB = 40;               // отступы карты от краёв
+  const SIZES = [10, 20, 30, 40, 50];     // размеры клеток
+  const BOT_START_UNITS = { easy: 10, medium: 25, hard: 50 };   // стартовые единицы обоих ботов по сложности
+  const START_SIZE = 20;                  // размер стартовых клеток игроков
+  const radiusOf = size => 14 + size * 0.6;   // 10 -> 20 px, 50 -> 44 px
+  const MOVE_K = 600;                     // скорость движения клетки = MOVE_K / размер (px/с)
+  const moveSpeed = c => MOVE_K / c.size; // клетка 10 -> 60 px/с, клетка 50 -> 12 px/с
+  const rate = c => c.size / 10;          // прирост единиц в секунду: пропорционально размеру
+  let SPEED = MAP.SPEED;         // скорость единицы, px/с
+  const LAUNCH = 4;              // единиц в секунду, которые выпускает клетка размера 10
+  const launchRate = c => LAUNCH * c.size / 10;   // пропорционально размеру: клетка 50 выпускает в 5 раз быстрее клетки 10
+  const UR = 4.5;                // радиус летящей единицы
+  let N = MAP.N;                 // всего клеток
+  const COLORS = { 0:'#8a8f98', 1:'#3b82f6', 2:'#ef4444', 3:'#3ddc84' };
+
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const overlay = document.getElementById('overlay');
+  const titleEl = document.getElementById('title');
+  const msgEl = document.getElementById('msg');
+  const $ = id => document.getElementById(id);
+
+  let zoom = 1, cam = { x: 0, y: 0 }, dpr = 1, minZoom = .3, maxZoom = 2.5;
+  let panning = null, gesture = null, lastScreen = { x: 0, y: 0 };
+  const ptrs = new Map(), keys = new Set();
+  const clampZ = z => Math.max(minZoom, Math.min(maxZoom, z));
+  function clampCam() {
+    const vw = innerWidth / zoom, vh = innerHeight / zoom;
+    cam.x = vw >= W ? (W - vw) / 2 : Math.max(0, Math.min(W - vw, cam.x));
+    cam.y = vh >= H ? (H - vh) / 2 : Math.max(0, Math.min(H - vh, cam.y));
+  }
+  function centerOn(x, y) { cam.x = x - innerWidth / zoom / 2; cam.y = y - innerHeight / zoom / 2; clampCam(); }
+  function zoomAt(cx, cy, nz) {
+    const wx = cx / zoom + cam.x, wy = cy / zoom + cam.y;
+    zoom = clampZ(nz); cam.x = wx - cx / zoom; cam.y = wy - cy / zoom; clampCam();
+  }
+  const inView = (x, y, m) => x >= cam.x - m && x <= cam.x + innerWidth / zoom + m && y >= cam.y - m && y <= cam.y + innerHeight / zoom + m;
+  let cells = [], squads = [];
+  let state = 'menu';            // menu | play | end
+  let diff = 'medium';
+  let botTimer = { 2: 0, 3: 0 }, botMoveTimer = { 2: 0, 3: 0 };
+  let moveSel = new Set(), lastTap = null, downInfo = null, box = null;
+  let sel = new Set(), tgts = [], dragging = false, pointer = { x:0, y:0 };
+  let last = 0;
+
+  const DIFF = {
+    easy:   { interval: 3.0, spend: .7, buffer: 3, random: true,  defend: false, moveEvery: 9, maxMove: 20 },
+    medium: { interval: 1.6, spend: .55, buffer: 2, random: false, defend: false, moveEvery: 5, maxMove: 30 },
+    hard:   { interval: 0.8, spend: .5, buffer: 1, random: false, defend: true,  moveEvery: 3, maxMove: 40 },
+  };
+
+  function resize() {
+    dpr = window.devicePixelRatio || 1;
+    canvas.width = innerWidth * dpr;
+    canvas.height = innerHeight * dpr;
+    minZoom = Math.min(innerWidth / W, innerHeight / H);   // можно отдалить до всей карты
+    maxZoom = Math.max(1.8, minZoom * 2);
+    zoom = clampZ(zoom); clampCam();
+  }
+  // фон: космос, туманности, звёзды (рисуется один раз на размер окна)
+  let bgCanvas = document.createElement('canvas'), stars = [];
+  function buildBg() {
+    const w = bgCanvas.width = canvas.width, h = bgCanvas.height = canvas.height;
+    const g = bgCanvas.getContext('2d');
+    let seed = 12345; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const base = g.createRadialGradient(w * .5, h * .45, 0, w * .5, h * .5, Math.max(w, h) * .75);
+    base.addColorStop(0, '#0d2468'); base.addColorStop(.55, '#06123a'); base.addColorStop(1, '#020512');
+    g.fillStyle = base; g.fillRect(0, 0, w, h);
+    const blob = (x, y, r, col) => {
+      const gr = g.createRadialGradient(x, y, 0, x, y, r);
+      gr.addColorStop(0, col); gr.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2);
+    };
+    for (let i = 0; i < 9; i++) {
+      const r = (.18 + rnd() * .22) * Math.max(w, h);
+      blob(rnd() * w, rnd() * h, r, i % 3 === 0 ? 'rgba(70,40,170,.20)' : 'rgba(30,90,230,.20)');
+    }
+    stars = [];
+    for (let i = 0; i < 260; i++) {
+      const x = rnd() * w, y = rnd() * h, r = (.4 + rnd() * rnd() * 1.8) * dpr, a = .25 + rnd() * .7;
+      const rgb = (190 + rnd() * 60 | 0) + ',' + (210 + rnd() * 40 | 0) + ',255';
+      if (i < 90) {                                  // часть звёзд неподвижна и нарисована в фоне
+        g.fillStyle = 'rgba(' + rgb + ',' + a + ')';
+        g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+      } else {                                       // остальные мигают
+        stars.push({ x, y, r: r * 1.15, rgb, a: .55 + rnd() * .45, p: rnd() * 6.28, s: .8 + rnd() * 2.6 });
+      }
+    }
+  }
+  addEventListener('resize', () => { resize(); buildBg(); });
+  // спрайты летящих единиц со свечением
+  const sprites = {};
+  function makeSprite(col, core) {
+    const c = document.createElement('canvas'); c.width = c.height = 48;
+    const g = c.getContext('2d');
+    const gr = g.createRadialGradient(24, 24, 0, 24, 24, 24);
+    gr.addColorStop(0, col + 'ff'); gr.addColorStop(.25, col + 'aa'); gr.addColorStop(1, col + '00');
+    g.fillStyle = gr; g.fillRect(0, 0, 48, 48);
+    const k = g.createRadialGradient(20, 20, 0, 24, 24, 8);
+    k.addColorStop(0, '#ffffff'); k.addColorStop(.35, core); k.addColorStop(1, col);
+    g.fillStyle = k; g.beginPath(); g.arc(24, 24, 7.5, 0, Math.PI * 2); g.fill();
+    return c;
+  }
+  sprites[1] = makeSprite('#2f8cff', '#8cc8ff');
+  sprites[2] = makeSprite('#ff3b3b', '#ff9a9a');
+  sprites[3] = makeSprite('#2fe07f', '#b4f7d2');
+  resize(); buildBg();
+
+  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+  // ---------- генерация ----------
+  function mk(x, y, owner, size, units) {
+    return { x, y, owner, size, r: radiusOf(size), units, orders: [], acc: 0, dest: null, vx: 0, vy: 0, stuck: 0, flash: 0 };
+  }
+
+  function genCells() {
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const gap = 36 - attempt * 0.5;
+      const list = [];
+      const by = H * .5 + Math.random() * H * .35;
+      const ry = H * .5 + Math.random() * H * .35;
+      const gr = radiusOf(START_SIZE);
+      list.push(mk(MAP.edge, by, 1, START_SIZE, BOT_START_UNITS[diff]));
+      list.push(mk(W - MAP.edge, ry, 2, 10, BOT_START_UNITS[diff]));   // красный: маленькая клетка
+      list.push(mk(W / 2 + (Math.random() - .5) * W * MAP.greenX, PADT + gr + MAP.greenY, 3, START_SIZE, BOT_START_UNITS[diff]));
+      let tries = 0;
+      while (list.length < N && tries < 60000) {
+        tries++;
+        const size = SIZES[Math.floor(Math.random() * SIZES.length)];
+        const c = mk(0, 0, 0, size, size);
+        c.x = c.r + 10 + Math.random() * (W - 2 * c.r - 20);
+        c.y = c.r + PADT + Math.random() * (H - 2 * c.r - PADT - PADB);
+        const ok = list.every((o, i) => dist(c, o) >= c.r + o.r + gap + (i < 3 ? MAP.spread : 0));
+        if (ok) list.push(c);
+      }
+      if (list.length === N) { list.forEach((c, i) => c.id = i); return list; }
+    }
+    return genCells();
+  }
+
+  function applyMap() {
+    MAP = MAPS[mapMode]; W = MAP.W; H = MAP.H; N = MAP.N; SPEED = MAP.SPEED;
+    resize();                                         // пересчитать допустимый масштаб
+  }
+
+  function newGame() {
+    applyMap();
+    cells = genCells();
+    squads = []; fx = [];
+    sel = new Set(); tgts = []; dragging = false; moveSel = new Set(); lastTap = null;
+    if (mapMode === 'big') {
+      zoom = clampZ(innerWidth / 1300);
+      const me = cells.find(c => c.owner === 1); centerOn(me.x + 250, me.y - 100);
+    } else { zoom = minZoom; clampCam(); }          // на обычной карте видно всё поле целиком
+    botTimer = { 2: 1.5, 3: 2.4 }; botMoveTimer = { 2: 4, 3: 5.5 };
+    state = 'play';
+    overlay.classList.add('hidden');
+  }
+
+  // ---------- логика ----------
+  const reserved = c => c.orders.reduce((a, o) => a + o.remaining, 0);
+  const avail = c => Math.max(0, Math.floor(c.units - reserved(c)));
+
+  // приказ: выпустить все свободные единицы по очереди
+  function send(src, target, owner) {
+    const n = avail(src);
+    if (n < 1 || src === target) return;
+    src.orders.push({ target, remaining: n });
+  }
+
+  // из одной клетки в любое число целей: все ещё не вылетевшие единицы
+  // делятся поровну между уже выбранными и новыми целями
+  function sendMulti(src, targets, owner) {
+    const pool = avail(src) + reserved(src);
+    const ts = [...new Set([...src.orders.map(o => o.target), ...targets])].filter(t => t !== src);
+    if (!ts.length || pool < 1) return;
+    const base = Math.floor(pool / ts.length);
+    let extra = pool - base * ts.length;
+    src.orders = [];
+    for (const t of ts) {
+      const k = base + (extra-- > 0 ? 1 : 0);
+      if (k >= 1) src.orders.push({ target: t, remaining: k });
+    }
+  }
+
+  function arrive(u) {
+    const c = u.target;
+    if (c.owner === u.owner) { c.units += 1; hitFx(u, c, 'join'); }
+    else if (c.units >= 1) { c.units -= 1; hitFx(u, c, 'hit'); }
+    else {
+      c.units = 1 - c.units; c.owner = u.owner; c.orders = []; c.acc = 0;
+      hitFx(u, c, 'capture');
+    }
+  }
+
+  function moveCell(c, dt) {
+    const sp = moveSpeed(c);
+    let dx = c.dest.x - c.x, dy = c.dest.y - c.y;
+    const d = Math.hypot(dx, dy);
+    if (d < 3) { c.dest = null; c.vx = c.vy = 0; return; }
+    dx /= d; dy /= d;
+    const near = Math.min(1, d / (c.r + 30));         // плавное торможение у цели
+    let wx = dx * sp * near, wy = dy * sp * near;
+    // объезд: отталкивание + боковое смещение вокруг препятствия
+    const M = 45;
+    for (const o of cells) {
+      if (o === c) continue;
+      let ox = c.x - o.x, oy = c.y - o.y;
+      const od = Math.hypot(ox, oy) || 1;
+      const gap = od - c.r - o.r;
+      if (gap >= M) continue;
+      ox /= od; oy /= od;
+      const k = Math.pow(1 - Math.max(gap, 0) / M, 1.5);
+      // касательная к препятствию, в сторону движения
+      let tx = -oy, ty = ox;
+      if (tx * dx + ty * dy < 0) { tx = -tx; ty = -ty; }
+      // если препятствие впереди — сильнее уходим вбок
+      const ahead = Math.max(0, -(ox * dx + oy * dy));
+      wx += (ox * 0.8 + tx * (0.6 + ahead)) * sp * 2.2 * k;
+      wy += (oy * 0.8 + ty * (0.6 + ahead)) * sp * 2.2 * k;
+    }
+    const wl = Math.hypot(wx, wy);
+    if (wl > sp * 1.4) { wx *= sp * 1.4 / wl; wy *= sp * 1.4 / wl; }
+    const f = Math.min(1, dt * 3.5);                   // инерция, чтобы поворот был плавным
+    c.vx += (wx - c.vx) * f; c.vy += (wy - c.vy) * f;
+    const px = c.x, py = c.y;
+    c.x += c.vx * dt; c.y += c.vy * dt;
+    // жёсткое разделение, чтобы клетки не наезжали друг на друга
+    for (const o of cells) {
+      if (o === c) continue;
+      const ox = c.x - o.x, oy = c.y - o.y, od = Math.hypot(ox, oy) || 1;
+      const min = c.r + o.r + 4;
+      if (od < min) { c.x = o.x + ox / od * min; c.y = o.y + oy / od * min; }
+    }
+    c.x = Math.max(c.r + 4, Math.min(W - c.r - 4, c.x));
+    c.y = Math.max(c.r + PADT, Math.min(H - c.r - PADB, c.y));
+    // застряла — останавливаемся
+    const moved = Math.hypot(c.x - px, c.y - py) / dt;
+    c.stuck = moved < sp * 0.12 ? c.stuck + dt : 0;
+    if (c.stuck > 1.2) { c.dest = null; c.vx = c.vy = 0; c.stuck = 0; }
+  }
+
+  function update(dt) {
+    for (const c of cells) if (c.owner) c.units += dt * rate(c);
+
+    updateFx(dt);
+
+    // движение клеток: плавный облёт других клеток
+    for (const c of cells) {
+      if (c.owner !== 1) moveSel.delete(c);
+      if (!c.owner) c.dest = null;
+      if (!c.dest) { c.vx = c.vy = 0; continue; }
+      moveCell(c, dt);
+    }
+
+    // выпуск единиц цепочкой
+    for (const c of cells) {
+      if (!c.orders.length) { c.acc = 0; continue; }
+      c.acc = Math.min(c.acc + dt * launchRate(c), 3);
+      while (c.acc >= 1 && c.orders.length) {
+        if (c.units < 1) break;
+        c.rr = (c.rr || 0) % c.orders.length;
+        const o = c.orders[c.rr];
+        const d = dist(c, o.target) || 1;
+        squads.push({ owner: c.owner, target: o.target, src: c, left: false,
+          x: c.x + (o.target.x - c.x) / d * c.r, y: c.y + (o.target.y - c.y) / d * c.r });
+        c.units -= 1; c.acc -= 1; o.remaining--;
+        if (o.remaining <= 0) c.orders.splice(c.rr, 1); else c.rr++;
+      }
+    }
+
+    // движение: единица не пролетает сквозь клетки, а попадает в первую встреченную
+    for (const u of squads) {
+      const t = u.target;
+      const d = dist(u, t) || 1;
+      const step = SPEED * dt;
+      u.dx = (t.x - u.x) / d; u.dy = (t.y - u.y) / d;
+      u.x += u.dx * step;
+      u.y += u.dy * step;
+      for (const c of cells) {
+        const dc = Math.hypot(u.x - c.x, u.y - c.y);
+        if (c === u.src && !u.left) {                 // пока не вылетела из клетки-источника, она её не задевает
+          if (dc > c.r + UR + 2) u.left = true;
+          continue;
+        }
+        if (dc <= c.r) { u.target = c; u.arrived = true; break; }
+      }
+    }
+
+    // бои в полёте: встретившиеся единицы разных цветов уничтожают друг друга
+    const G = UR * 2, grid = new Map();
+    const key = (x, y) => x + ',' + y;
+    for (const u of squads) {
+      if (u.arrived) continue;
+      const k = key(Math.floor(u.x / G), Math.floor(u.y / G));
+      (grid.get(k) || grid.set(k, []).get(k)).push(u);
+    }
+    for (const u of squads) {
+      if (u.arrived || u.dead) continue;
+      const gx = Math.floor(u.x / G), gy = Math.floor(u.y / G);
+      outer:
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+        const lst = grid.get(key(gx + dx, gy + dy));
+        if (!lst) continue;
+        for (const v of lst) {
+          if (v.dead || v.owner === u.owner) continue;
+          if (Math.hypot(u.x - v.x, u.y - v.y) < G) {
+            u.dead = v.dead = true;
+            burst((u.x + v.x) / 2, (u.y + v.y) / 2, Math.random() * 6.28, 6.28, 5, '255,255,255', 70, .35);
+            break outer;
+          }
+        }
+      }
+    }
+    for (const u of squads) if (u.arrived && !u.dead) arrive(u);
+    squads = squads.filter(u => !u.arrived && !u.dead);
+
+    if (state === 'play') {
+      for (const B of BOTS) {
+        botTimer[B] -= dt;
+        if (botTimer[B] <= 0) { botTimer[B] = DIFF[diff].interval * (0.8 + Math.random() * 0.4); botStep(B); }
+        botMoveTimer[B] -= dt;
+        if (botMoveTimer[B] <= 0) { botMoveTimer[B] = DIFF[diff].moveEvery * (0.7 + Math.random() * 0.6); botMove(B); }
+      }
+      checkWin();
+    }
+  }
+
+  function checkWin() {
+    const alive = o => cells.some(c => c.owner === o) || squads.some(s => s.owner === o);
+    const human = alive(1), bots = BOTS.some(alive);
+    if (!human || !bots) endGame(human);
+  }
+
+  function endGame(humanWon) {
+    state = 'end';
+    titleEl.textContent = humanWon ? 'Победа!' : 'Поражение';
+    msgEl.textContent = humanWon ? 'Оба бота побеждены.' : 'Боты захватили все ваши клетки.';
+    $('playBtn').textContent = 'Играть снова';
+    overlay.classList.remove('hidden');
+  }
+
+  // ---------- бот ----------
+  const incoming = (cell, owner) => squads.reduce((a, s) => a + (s.target === cell && s.owner === owner ? 1 : 0), 0)
+    + cells.reduce((a, c) => a + (c.owner === owner ? c.orders.reduce((x, o) => x + (o.target === cell ? o.remaining : 0), 0) : 0), 0);
+  const travel = (a, b) => Math.max(0, (dist(a, b) - b.r) / SPEED);
+  
+
+  const hostileIn = (cell, B) => [1, 2, 3].reduce((a, o) => a + (o === B ? 0 : incoming(cell, o)), 0);
+  const strengthOf = o => cells.reduce((a, c) => a + (c.owner === o ? c.units : 0), 0) + squads.reduce((a, u) => a + (u.owner === o ? 1 : 0), 0);
+
+  // единицы не пролетают сквозь клетки: возвращает клетку, которая перекроет путь от src к t
+  function pathBlocker(src, t) {
+    const dx = t.x - src.x, dy = t.y - src.y, L2 = dx * dx + dy * dy || 1;
+    for (const c of cells) {
+      if (c === src || c === t) continue;
+      const u = ((c.x - src.x) * dx + (c.y - src.y) * dy) / L2;
+      if (u <= 0 || u >= 1) continue;
+      if (Math.hypot(c.x - (src.x + dx * u), c.y - (src.y + dy * u)) < c.r + UR + 3) return c;
+    }
+    return null;
+  }
+
+  // отправить ровно n единиц (бот не обязан тратить всё, чтобы оставлять резерв)
+  function sendN(src, target, n) {
+    n = Math.min(Math.floor(n), avail(src));
+    if (n < 1 || src === target) return 0;
+    const ex = src.orders.find(o => o.target === target);
+    if (ex) ex.remaining += n; else src.orders.push({ target, remaining: n });
+    return n;
+  }
+  const reservedTo = (B, t) => cells.reduce((a, c) => a + (c.owner === B ? c.orders.reduce((x, o) => x + (o.target === t ? o.remaining : 0), 0) : 0), 0);
+
+  // набрать нужное число единиц из клеток по порядку (ближайшие первыми)
+  function spend(list, target, need) {
+    let left = need;
+    for (const m of list) { if (left <= 0) break; left -= sendN(m, target, left); }
+  }
+
+  // Стратегия: не бросаться на крупные клетки. Тратить не больше доли сил (spend),
+  // предпочитать дешёвые захваты (малые клетки: больше клеток при меньшем риске),
+  // добивать ослабленных врагов, оборонять свои клетки, оставлять резерв.
+  function botStep(B) {
+    const cfg = DIFF[diff];
+    const myCells = cells.filter(c => c.owner === B);
+    const mine = myCells.filter(c => avail(c) >= 2);
+    if (!mine.length) return;
+    const total = mine.reduce((a, c) => a + avail(c), 0);
+    const myStr = strengthOf(B);
+
+    // оборона своих клеток
+    if (cfg.defend) {
+      for (const c of myCells) {
+        const threat = hostileIn(c, B) - incoming(c, B) - (c.units + 1);
+        if (threat > -1) {
+          const needD = Math.ceil(threat + 2);
+          const helpers = mine.filter(m => m !== c).sort((a, b) => dist(a, c) - dist(b, c));
+          const sum = helpers.reduce((a, h) => a + avail(h), 0);
+          if (sum >= needD) { spend(helpers, c, needD); return; }
+        }
+      }
+    }
+
+    // не кормить заведомо проигрышную атаку: если до захвата цели не хватает сил, отменяем очередь к ней
+    for (const c of myCells) {
+      for (const o of [...c.orders]) {
+        const t = o.target;
+        if (t.owner === B) continue;
+        const gap = t.units + (t.owner ? travel(c, t) * rate(t) + incoming(t, t.owner) : 0) - incoming(t, B);
+        if (gap > total + reservedTo(B, t)) {
+          for (const m of myCells) m.orders = m.orders.filter(x => x.target !== t);
+          break;
+        }
+      }
+    }
+
+    const cap = myCells.length <= 1 ? total : cfg.spend * total;   // в начале игры можно тратить всё на рост
+    const options = [];
+    for (const t of cells) {
+      if (t.owner === B) continue;
+      // нейтральную клетку, которую уже атакует кто-то другой, не трогаем: иначе мы лишь ослабим её для третьего
+      if (t.owner === 0 && hostileIn(t, B) > 0) continue;
+      // стрелять можно только из клеток, у которых путь к цели не перекрыт другой клеткой
+      const sorted = mine.filter(m => !pathBlocker(m, t)).sort((a, b) => dist(a, t) - dist(b, t));
+      if (!sorted.length) continue;
+      const tt = travel(sorted[0], t);
+      const base = t.units + cfg.buffer - incoming(t, B);
+      const gather = n => {
+        let sum = 0; const use = [];
+        for (const m of sorted) { use.push(m); sum += avail(m); if (sum >= n) break; }
+        return { use, sum };
+      };
+      let need = base + (t.owner ? tt * rate(t) + incoming(t, t.owner) : 0);
+      if (need <= 0) continue;
+      // цель растёт и пока идёт вылет цепочкой: вылетают не мгновенно
+      let g = gather(Math.ceil(need));
+      const lr = g.use.reduce((a, m) => a + launchRate(m), 0) || 1;
+      if (t.owner) need = (need + (need / lr) * rate(t)) * 1.1;
+      need = Math.ceil(need);
+      if (need > cap) continue;                                     // слишком дорого — не берём
+      g = gather(need);
+      if (g.sum < need) continue;
+      const use = g.use;
+      const enemy = t.owner !== 0;
+      let gain = rate(t) * (enemy ? 2.2 : 1) + 0.3;                 // +0.3: сама по себе клетка тоже ценна
+      if (enemy) {
+        if (strengthOf(t.owner) < myStr) gain *= 1.4;               // добиваем более слабого
+        if (need < 0.5 * total) gain *= 1.3;                        // ослабленная клетка врага — лёгкая добыча
+      }
+      let score = gain / (need + dist(sorted[0], t) / 20 + 3);
+      score *= Math.max(0.15, 1 - 0.9 * need / total);              // чем больший процент сил тратим, тем хуже
+      score *= 0.85 + Math.random() * 0.3;                          // немного непредсказуемости
+      options.push({ t, use, need, score });
+    }
+    if (!options.length) return;
+    const pick = cfg.random ? options[Math.floor(Math.random() * options.length)]
+                            : options.reduce((a, b) => (b.score > a.score ? b : a));
+    spend(pick.use, pick.t, pick.need);
+  }
+
+  // бот двигает клетки: небольшие клетки сближаются с целью, чтобы единицам лететь меньше
+  function botMove(B) {
+    const cfg = DIFF[diff];
+    const idle = cells.filter(c => c.owner === B && !c.dest && c.size <= cfg.maxMove);
+    if (!idle.length) return;
+    const c = idle[Math.floor(Math.random() * idle.length)];
+    let gx, gy;
+    if (cfg.random) {
+      const a = Math.random() * Math.PI * 2, len = 60 + Math.random() * 100;
+      gx = c.x + Math.cos(a) * len; gy = c.y + Math.sin(a) * len;
+    } else {
+      const foes = cells.filter(t => t.owner !== B);
+      if (!foes.length) return;
+      // ближайшая цель, крупные клетки чуть привлекательнее
+      const t = foes.reduce((a, b) => (dist(c, b) - b.size * 2 < dist(c, a) - a.size * 2 ? b : a));
+      const d = dist(c, t);
+      const stop = c.r + t.r + 80;                // не подплываем вплотную
+      const go = Math.min(d * 0.4, d - stop, 200);
+      if (go < 20) return;
+      gx = c.x + (t.x - c.x) / d * go; gy = c.y + (t.y - c.y) / d * go;
+    }
+    sfxLaunchMove(c, false);
+    c.dest = { x: Math.max(c.r + 6, Math.min(W - c.r - 6, gx)), y: Math.max(c.r + PADT, Math.min(H - c.r - PADB, gy)) };
+  }
+
+  // ---------- ввод ----------
+  function toWorld(e) {
+    return { x: e.clientX / zoom + cam.x, y: e.clientY / zoom + cam.y };
+  }
+  function cellAt(p) {
+    let best = null, bd = Infinity;
+    for (const c of cells) {
+      const d = Math.hypot(c.x - p.x, c.y - p.y);
+      if (d <= c.r + 8 && d < bd) { best = c; bd = d; }
+    }
+    return best;
+  }
+
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+  addEventListener('keydown', e => {
+    if (e.key === 'Escape') moveSel = new Set();
+    if (e.code === 'Space' || e.code === 'Home') {                 // вернуть камеру к своим клеткам
+      const mine = cells.filter(c => c.owner === 1);
+      if (mine.length) { const b = mine.reduce((a, c) => (c.size > a.size ? c : a)); centerOn(b.x, b.y); }
+      e.preventDefault();
+    }
+    keys.add(e.code);
+    if (e.code.startsWith('Arrow')) e.preventDefault();
+  });
+  addEventListener('keyup', e => keys.delete(e.code));
+  addEventListener('blur', () => keys.clear());
+  canvas.addEventListener('wheel', e => { e.preventDefault(); zoomAt(e.clientX, e.clientY, zoom * Math.exp(-e.deltaY * 0.0015)); }, { passive: false });
+  function cancelAction() { dragging = false; box = null; sel = new Set(); tgts = []; downInfo = null; }
+  canvas.addEventListener('pointerdown', e => {
+    ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    lastScreen = { x: e.clientX, y: e.clientY };
+    if (ptrs.size === 2) {                                        // два пальца: масштаб и сдвиг камеры
+      cancelAction(); panning = null;
+      const [a, b] = [...ptrs.values()];
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      gesture = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, z0: zoom, wx: mx / zoom + cam.x, wy: my / zoom + cam.y };
+      return;
+    }
+    if (ptrs.size > 2) return;
+    if (e.button > 0) {                                           // средняя/правая кнопка: двигаем камеру
+      panning = { sx: e.clientX, sy: e.clientY, cx: cam.x, cy: cam.y, moved: false, btn: e.button };
+      canvas.setPointerCapture(e.pointerId);
+      return;
+    }
+    if (state !== 'play') return;
+    canvas.setPointerCapture(e.pointerId);
+    pointer = toWorld(e);
+    const c = cellAt(pointer);
+    downInfo = { x: pointer.x, y: pointer.y, t: performance.now(), cell: c, shift: e.shiftKey || e.ctrlKey };
+    if (c && c.owner === 1) {
+      // если нажали на клетку из выделенной группы, атакуем сразу из всей группы
+      sel = (moveSel.has(c) && moveSel.size > 1) ? new Set(moveSel) : new Set([c]);
+      tgts = []; dragging = true;
+    } else if (!c) {
+      box = { x0: pointer.x, y0: pointer.y, x1: pointer.x, y1: pointer.y };   // рамка выделения
+    }
+  });
+  function touch(c) {
+    if (!c) return;
+    if (c.owner === 1) { if (!tgts.includes(c)) sel.add(c); }   // свои — источники
+    // чужие клетки по пути игнорируются: целью станет только клетка, на которой отпустили
+  }
+  canvas.addEventListener('pointermove', e => {
+    if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    lastScreen = { x: e.clientX, y: e.clientY };
+    if (gesture && ptrs.size >= 2) {
+      const [a, b] = [...ptrs.values()];
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      zoom = clampZ(gesture.z0 * d / gesture.d0);
+      cam.x = gesture.wx - mx / zoom; cam.y = gesture.wy - my / zoom; clampCam();
+      return;
+    }
+    if (panning) {
+      if (Math.hypot(e.clientX - panning.sx, e.clientY - panning.sy) > 5) panning.moved = true;
+      cam.x = panning.cx - (e.clientX - panning.sx) / zoom; cam.y = panning.cy - (e.clientY - panning.sy) / zoom; clampCam();
+      return;
+    }
+    const prev = pointer;
+    pointer = toWorld(e);
+    if (box) { box.x1 = pointer.x; box.y1 = pointer.y; return; }
+    if (!dragging) return;
+    // проходим по всему отрезку движения, чтобы не пропустить клетки при быстром движении мыши
+    const d = Math.hypot(pointer.x - prev.x, pointer.y - prev.y);
+    const steps = Math.max(1, Math.ceil(d / 6));
+    for (let i = 1; i <= steps; i++) {
+      touch(cellAt({ x: prev.x + (pointer.x - prev.x) * i / steps, y: prev.y + (pointer.y - prev.y) * i / steps }));
+    }
+  });
+  function moveTo(p) {
+    const list = [...moveSel].filter(c => c.owner === 1);
+    list.forEach((c, i) => {
+      if (list.length === 1) { c.dest = { x: p.x, y: p.y }; return; }
+      const a = i / list.length * Math.PI * 2;
+      c.dest = { x: p.x + Math.cos(a) * 70, y: p.y + Math.sin(a) * 70 };
+    });
+    list.forEach(c => sfxLaunchMove(c, true));
+    moveSel = new Set();
+  }
+
+  function endDrag(e) {
+    pointer = toWorld(e);
+    const info = downInfo; downInfo = null;
+    const isTap = info && Math.hypot(pointer.x - info.x, pointer.y - info.y) < 8 && performance.now() - info.t < 400;
+    if (box) {
+      const b = box; box = null;
+      if (!isTap && state === 'play') {            // рамкой выделяем свои клетки
+        const x0 = Math.min(b.x0, b.x1), x1 = Math.max(b.x0, b.x1), y0 = Math.min(b.y0, b.y1), y1 = Math.max(b.y0, b.y1);
+        const picked = cells.filter(c => c.owner === 1 && c.x + c.r >= x0 && c.x - c.r <= x1 && c.y + c.r >= y0 && c.y - c.r <= y1);
+        moveSel = (info && info.shift) ? new Set([...moveSel, ...picked]) : new Set(picked);
+        lastTap = null;
+        return;
+      }
+    }
+    if (isTap && state === 'play') {
+      const c = cellAt(pointer);
+      if (c && c.owner === 1) {                  // тап по своей клетке — выбрать для перемещения
+        if (moveSel.has(c)) moveSel.delete(c); else moveSel.add(c);
+        lastTap = null;
+      } else if (!c) {                           // одиночный тап по пустому месту — переместить выбранные
+        if (moveSel.size) moveTo(pointer);
+        lastTap = null;
+      } else lastTap = null;
+      dragging = false; sel = new Set(); tgts = [];
+      return;
+    }
+    if (!dragging) return;
+    dragging = false;
+    const last = cellAt(pointer);
+    const targets = [...tgts];
+    if (last && !targets.includes(last)) {
+      if (last.owner !== 1 || sel.size > 1 || !sel.has(last)) targets.push(last);
+    }
+    if (state === 'play') {
+      for (const s of sel) sendMulti(s, targets, 1);
+    }
+    sel = new Set(); tgts = [];
+  }
+  function release(e) {
+    ptrs.delete(e.pointerId);
+    if (gesture) { if (ptrs.size < 2) gesture = null; cancelAction(); return; }
+    if (panning) {
+      if (panning.btn === 2 && !panning.moved) moveSel = new Set();   // правый клик без движения снимает выделение
+      panning = null; return;
+    }
+    endDrag(e);
+  }
+  canvas.addEventListener('pointerup', release);
+  canvas.addEventListener('pointercancel', e => { ptrs.delete(e.pointerId); gesture = null; panning = null; cancelAction(); });
+
+  // мини-карта: клик или перетаскивание переносит камеру
+  const mini = $('mini');
+  const miniGo = e => {
+    const r = mini.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width * mini.width, py = (e.clientY - r.top) / r.height * mini.height;
+    centerOn((px - 12) / ((mini.width - 24) / W), (py - 12) / ((mini.height - 24) / H));
+  };
+  let miniDown = false;
+  mini.addEventListener('pointerdown', e => { miniDown = true; mini.setPointerCapture(e.pointerId); miniGo(e); e.stopPropagation(); });
+  mini.addEventListener('pointermove', e => { if (miniDown) miniGo(e); });
+  mini.addEventListener('pointerup', () => { miniDown = false; });
+
+  // меню
+  document.querySelectorAll('#diffRow button').forEach(b => b.addEventListener('click', () => {
+    diff = b.dataset.d;
+    document.querySelectorAll('#diffRow button').forEach(x => x.classList.toggle('on', x === b));
+  }));
+  document.querySelectorAll('#mapRow button').forEach(b => {
+    b.classList.toggle('on', b.dataset.m === mapMode);
+    b.addEventListener('click', () => {
+      mapMode = b.dataset.m;
+      document.querySelectorAll('#mapRow button').forEach(x => x.classList.toggle('on', x === b));
+      try { localStorage.setItem('cells-map', mapMode); } catch (e) {}
+    });
+  });
+  $('playBtn').addEventListener('click', newGame);
+  $('restart').addEventListener('click', newGame);
+  $('mute').addEventListener('click', () => { audio(); setMuted(!muted); });
+  $('mute').classList.toggle('muted', muted);
+  // браузер разрешает звук только после действия пользователя
+  addEventListener('pointerdown', () => audio(), { once: true });
+
+  // ---------- отрисовка ----------
+  function draw() {
+    const now = performance.now() / 1000;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(bgCanvas, 0, 0);
+    // мигающие звёзды: у каждой своя скорость и фаза, яркие слегка «лучатся»
+    for (const st of stars) {
+      const k = 0.5 + 0.5 * Math.sin(now * st.s + st.p);
+      const a = st.a * (0.06 + 0.94 * k * k);
+      ctx.fillStyle = 'rgba(' + st.rgb + ',' + a + ')';
+      ctx.beginPath(); ctx.arc(st.x, st.y, st.r * (0.7 + 0.5 * k), 0, Math.PI * 2); ctx.fill();
+      if (st.r > 1.7 * dpr && k > .7) {
+        const l = st.r * 4.5 * k;
+        ctx.strokeStyle = 'rgba(' + st.rgb + ',' + a * .5 + ')'; ctx.lineWidth = Math.max(1, dpr * .6);
+        ctx.beginPath(); ctx.moveTo(st.x - l, st.y); ctx.lineTo(st.x + l, st.y); ctx.moveTo(st.x, st.y - l); ctx.lineTo(st.x, st.y + l); ctx.stroke();
+      }
+    }
+    ctx.setTransform(dpr * zoom, 0, 0, dpr * zoom, -dpr * zoom * cam.x, -dpr * zoom * cam.y);
+    // граница карты
+    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(100,150,255,.38)'; ctx.strokeRect(0, 0, W, H);
+
+    // цели перемещения
+    for (const c of cells) {
+      if (!c.dest) continue;
+      ctx.setLineDash([2, 8]); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(241,245,249,.55)';
+      ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(c.dest.x, c.dest.y); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.strokeStyle = 'rgba(241,245,249,.9)';
+      ctx.beginPath(); ctx.arc(c.dest.x, c.dest.y, 9, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(c.dest.x - 5, c.dest.y); ctx.lineTo(c.dest.x + 5, c.dest.y);
+      ctx.moveTo(c.dest.x, c.dest.y - 5); ctx.lineTo(c.dest.x, c.dest.y + 5); ctx.stroke();
+    }
+
+    // запланированные отправки (ещё не вылетевшие единицы)
+    for (const c of cells) {
+      if (c.owner !== 1) continue;
+      for (const o of c.orders) {
+        ctx.lineWidth = 1.5; ctx.setLineDash([3, 7]);
+        ctx.strokeStyle = 'rgba(96,165,250,.45)';
+        ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(o.target.x, o.target.y); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+
+    // рамка выделения
+    if (box) {
+      const x = Math.min(box.x0, box.x1), y = Math.min(box.y0, box.y1), w = Math.abs(box.x1 - box.x0), h = Math.abs(box.y1 - box.y0);
+      ctx.fillStyle = 'rgba(80,150,255,.12)'; ctx.fillRect(x, y, w, h);
+      ctx.setLineDash([6, 5]); ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(140,200,255,.9)'; ctx.strokeRect(x, y, w, h); ctx.setLineDash([]);
+    }
+
+    // линии выбора
+    if (dragging) {
+      ctx.lineWidth = 3; ctx.setLineDash([8, 8]);
+      ctx.strokeStyle = 'rgba(120,185,255,.95)';
+      const hover = cellAt(pointer);
+      const tl = [...tgts];
+      if (hover && !tl.includes(hover) && !sel.has(hover)) tl.push(hover);
+      if (!tl.length) tl.push(pointer);
+      for (const s of sel) for (const t of tl) {
+        if (t === s) continue;
+        ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(t.x, t.y); ctx.stroke();
+      }
+      if (hover === undefined || !hover) {
+        for (const s of sel) { ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(pointer.x, pointer.y); ctx.stroke(); }
+      }
+      ctx.setLineDash([]);
+    }
+
+    // клетки
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (const c of cells) if (inView(c.x, c.y, c.r + 80)) drawCell(c, now);
+
+    // летящие единицы: светящиеся шарики с хвостом
+    for (const u of squads) {
+      if (!inView(u.x, u.y, 40)) continue;
+      const col = u.owner === 1 ? '47,140,255' : u.owner === 2 ? '255,59,59' : '47,224,127';
+      if (u.dx !== undefined && squads.length < 500) {
+        ctx.strokeStyle = 'rgba(' + col + ',.35)'; ctx.lineWidth = 3.5; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(u.x, u.y); ctx.lineTo(u.x - u.dx * 14, u.y - u.dy * 14); ctx.stroke();
+      }
+      ctx.drawImage(sprites[u.owner], u.x - 11, u.y - 11, 22, 22);
+    }
+    drawFx();
+    if (now - miniT > .12) { miniT = now; drawMini(); }
+  }
+
+  function drawCell(c, now) {
+    const { x, y, r } = c;
+    const pulse = c.owner ? 0.75 + 0.25 * Math.sin(now * 2 + c.id) : 1;
+    const e = cellSprite(c);
+    ctx.globalAlpha = c.owner ? .82 + .18 * pulse : 1;
+    ctx.drawImage(e.cv, x - e.off, y - e.off, e.S, e.S);
+    ctx.globalAlpha = 1;
+
+    // вспышка при попадании
+    if (c.flash > 0) {
+      const col = c.owner ? UCOL[c.owner] : '215,230,255';
+      ctx.save();
+      const g2 = ctx.createRadialGradient(x, y, r * .2, x, y, r * 1.12);
+      g2.addColorStop(0, 'rgba(255,255,255,' + c.flash * .28 + ')');
+      g2.addColorStop(.75, 'rgba(' + col + ',' + c.flash * .38 + ')');
+      g2.addColorStop(1, 'rgba(' + col + ',0)');
+      ctx.fillStyle = g2;
+      ctx.beginPath(); ctx.arc(x, y, r * 1.12, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+
+    // выделения
+    const ring = (col, dash) => {
+      ctx.beginPath(); ctx.arc(x, y, r + 7, 0, Math.PI * 2);
+      ctx.setLineDash(dash || []); ctx.lineWidth = 2; ctx.strokeStyle = col; ctx.stroke(); ctx.setLineDash([]);
+    };
+    if (moveSel.has(c)) ring('#f1f5f9', [5, 5]);
+    if (tgts.includes(c)) ring('#fbbf24');
+    if (sel.has(c)) ring('#93c5fd');
+    if (dragging && c.owner !== 1 && cellAt(pointer) === c) ring('#fbbf24');
+
+    // число единиц (у совсем мелких кружков при сильном отдалении не рисуем)
+    if (r * zoom > 7) {
+      ctx.font = '700 ' + Math.round(15 + c.size * 0.22) + 'px "Segoe UI", system-ui, sans-serif';
+      const txt = Math.floor(c.units);
+      ctx.lineWidth = 3.5; ctx.lineJoin = 'round'; ctx.strokeStyle = 'rgba(0,0,20,.55)';
+      ctx.strokeText(txt, x, y + 1);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(txt, x, y + 1);
+    }
+  }
+
+  // кэш готовых изображений клеток: свечение и градиенты считаются один раз
+  let spriteZB = 0, spriteDpr = 0, spriteCache = new Map();
+  function cellSprite(c) {
+    const zb = Math.min(2.5, Math.max(.25, Math.round(zoom * 4) / 4));
+    if (zb !== spriteZB || dpr !== spriteDpr) { spriteZB = zb; spriteDpr = dpr; spriteCache = new Map(); }
+    const key = c.owner * 100 + c.size;
+    let e = spriteCache.get(key);
+    if (e) return e;
+    const r = c.r, pad = 40, S = (r + pad) * 2, k = dpr * zb;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = Math.ceil(S * k);
+    const g = cv.getContext('2d'); g.scale(k, k);
+    const x = r + pad, y = r + pad;
+    if (c.owner === 0) {
+      const gr = g.createRadialGradient(x - r * .25, y - r * .3, r * .1, x, y, r);
+      gr.addColorStop(0, 'rgba(170,195,255,.06)'); gr.addColorStop(.7, 'rgba(150,175,235,.10)'); gr.addColorStop(1, 'rgba(205,222,255,.34)');
+      g.fillStyle = gr; g.shadowColor = 'rgba(150,190,255,.55)'; g.shadowBlur = 16;
+      g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+      g.shadowBlur = 0;
+      g.lineWidth = 2.5; g.strokeStyle = 'rgba(215,230,255,.7)'; g.stroke();
+      g.beginPath(); g.arc(x, y, r * .84, Math.PI * 1.08, Math.PI * 1.58);
+      g.lineWidth = Math.max(2, r * .07); g.lineCap = 'round'; g.strokeStyle = 'rgba(255,255,255,.32)'; g.stroke();
+    } else {
+      const pal = PAL[c.owner], edge = pal.edge;
+      const gr = g.createRadialGradient(x - r * .2, y - r * .25, r * .1, x, y, r);
+      gr.addColorStop(0, pal.s0); gr.addColorStop(.7, pal.s1); gr.addColorStop(1, pal.s2);
+      g.shadowColor = edge; g.shadowBlur = 26;
+      g.fillStyle = gr;
+      g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+      g.lineWidth = 3.5; g.strokeStyle = edge; g.stroke();
+      g.shadowBlur = 0;
+      g.beginPath(); g.arc(x, y, r * .84, Math.PI * 1.08, Math.PI * 1.55);
+      g.lineWidth = Math.max(2, r * .07); g.lineCap = 'round'; g.strokeStyle = 'rgba(255,255,255,.28)'; g.stroke();
+    }
+    e = { cv, off: r + pad, S };
+    spriteCache.set(key, e);
+    return e;
+  }
+
+  let miniT = 0;
+  function drawMini() {
+    const m = $('mini'), g = m.getContext('2d');
+    const w = m.width, h = m.height;
+    g.clearRect(0, 0, w, h);
+    const sx = (w - 24) / W, sy = (h - 24) / H;
+    for (const c of cells) {
+      const col = c.owner === 1 ? '#3b9bff' : c.owner === 2 ? '#ff4d4d' : c.owner === 3 ? '#3ddc84' : 'rgba(205,220,255,.75)';
+      g.fillStyle = col;
+      g.beginPath(); g.arc(12 + c.x * sx, 12 + c.y * sy, 1.6 + c.size / 22, 0, Math.PI * 2); g.fill();
+    }
+    for (const u of squads) {
+      g.fillStyle = u.owner === 1 ? '#8cc8ff' : u.owner === 2 ? '#ff9a9a' : '#b4f7d2';
+      g.fillRect(12 + u.x * sx - 1, 12 + u.y * sy - 1, 2, 2);
+    }
+    // прямоугольник того, что сейчас видно на экране
+    g.strokeStyle = 'rgba(255,255,255,.85)'; g.lineWidth = 1.5;
+    g.strokeRect(12 + cam.x * sx, 12 + cam.y * sy, innerWidth / zoom * sx, innerHeight / zoom * sy);
+  }
+
+  const txtCache = {};
+  function setTxt(id, v) { if (txtCache[id] !== v) { txtCache[id] = v; $(id).textContent = v; } }
+
+  function updateHud() {
+    const stat = o => {
+      let c = 0, u = 0;
+      for (const x of cells) if (x.owner === o) { c++; u += Math.floor(x.units); }
+      for (const s of squads) if (s.owner === o) u += 1;
+      return [c, u];
+    };
+    const [bc, bu] = stat(1), [rc, ru] = stat(2), [gc, gu] = stat(3);
+    setTxt('bc', bc); setTxt('bu', bu); setTxt('rc', rc); setTxt('ru', ru); setTxt('gc', gc); setTxt('gu', gu);
+    const ht = dragging ? 'Отпустите на цели, чтобы отправить единицы'
+      : moveSel.size ? 'Выделено: ' + moveSel.size + '. Тяните к цели — атака, тап по пустому месту — переместить. Esc / правая кнопка — снять'
+      : 'Зажмите и перетащите, чтобы атаковать';
+    if ($('hintText').textContent !== ht) $('hintText').textContent = ht;
+  }
+
+  function frame(t) {
+    const dt = Math.min(0.05, (t - last) / 1000 || 0);
+    last = t;
+    if (state === 'play') {
+      const sp = 900 / zoom * dt;
+      let mx = 0, my = 0;
+      if (keys.has('ArrowLeft') || keys.has('KeyA')) mx -= 1;
+      if (keys.has('ArrowRight') || keys.has('KeyD')) mx += 1;
+      if (keys.has('ArrowUp') || keys.has('KeyW')) my -= 1;
+      if (keys.has('ArrowDown') || keys.has('KeyS')) my += 1;
+      if (dragging || box) {                                       // при выделении или перетаскивании у края экрана камера едет сама
+        const E = 36;
+        if (lastScreen.x < E) mx -= 1; if (lastScreen.x > innerWidth - E) mx += 1;
+        if (lastScreen.y < E + 50) my -= 1; if (lastScreen.y > innerHeight - E) my += 1;
+      }
+      if (mx || my) {
+        cam.x += mx * sp; cam.y += my * sp; clampCam();
+        if (dragging || box) {
+          pointer = { x: lastScreen.x / zoom + cam.x, y: lastScreen.y / zoom + cam.y };
+          if (box) { box.x1 = pointer.x; box.y1 = pointer.y; }
+          if (dragging) touch(cellAt(pointer));
+        }
+      }
+    }
+    try { if (state === 'play') update(dt); } catch (e) { console.error(e); }
+    try { draw(); } catch (e) { console.error(e); }
+    updateHud();
+    updateHum();
+    requestAnimationFrame(frame);
+  }
+
+  cells = genCells(); // фон для меню
+  requestAnimationFrame(frame);
+
+  // для отладки
+  window.__game = { get cells() { return cells; }, get squads() { return squads; }, send, get state() { return state; } };
+})();
+</script>
+</body>
+</html>
