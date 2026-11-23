@@ -976,7 +976,15 @@
     ptrs.delete(e.pointerId);
     if (gesture) { if (ptrs.size < 2) gesture = null; cancelAction(); return; }
     if (panning) {
-      if (panning.btn === 2 && !panning.moved) moveSel = new Set();   // правый клик без движения снимает выделение
+      if (panning.btn === 2 && !panning.moved) {
+        // правый клик по своей клетке: она перестаёт отдавать единицы (отменяются все её очереди)
+        const c = cellAt(toWorld(e));
+        if (c && c.owner === 1) {
+          const group = moveSel.has(c) ? [...moveSel] : [c];
+          for (const m of group) { m.orders = []; m.acc = 0; }
+          fx.push({ k: 'ring', x: c.x, y: c.y, col: '241,245,249', t: 0, life: .35, r0: c.r, r1: c.r + 14 });
+        } else moveSel = new Set();                                  // правый клик по пустому месту снимает выделение
+      }
       panning = null; return;
     }
     endDrag(e);
