@@ -450,6 +450,23 @@
     return genCells();
   }
 
+  const POP_UNITS = 250;                              // в режиме живых клеток клетка с таким числом единиц лопается навсегда
+  function popCell(c) {
+    const col = c.owner ? UCOL[c.owner] : '215,230,255';
+    sfxExplode(c);
+    c.flash = 1;
+    fx.push({ k: 'wave', x: c.x, y: c.y, col, t: 0, life: 1.1, r0: c.r, r1: c.r + 150 });
+    fx.push({ k: 'wave', x: c.x, y: c.y, col: '255,255,255', t: -.1, life: .9, r0: c.r, r1: c.r + 80 });
+    fx.push({ k: 'wave', x: c.x, y: c.y, col, t: -.2, life: 1.2, r0: c.r * .5, r1: c.r + 40 });
+    for (let i = 0; i < 48; i++) {
+      const a = i / 48 * Math.PI * 2;
+      burst(c.x + Math.cos(a) * c.r, c.y + Math.sin(a) * c.r, a, .4, 2, i % 3 ? col : '255,255,255', 160, .9);
+    }
+    cells = cells.filter(x => x !== c);
+    for (const x of cells) x.orders = x.orders.filter(o => o.target !== c);
+    for (const u of squads) { if (u.target === c) u.dead = true; if (u.src === c) u.left = true; }
+    moveSel.delete(c); sel.delete(c); tgts = tgts.filter(t => t !== c);
+  }
   const dynTarget = c => Math.max(10, Math.min(250, c.units));
 
   function applyMap() {
@@ -572,6 +589,7 @@
         c.size += (Math.min(dynTarget(c), fit) - c.size) * Math.min(1, dt * 3);
         c.r = radiusOf(Math.round(c.size));
       }
+      for (const c of cells.filter(c => c.units >= POP_UNITS)) popCell(c);
     }
 
     updateFx(dt);
