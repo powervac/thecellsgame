@@ -356,9 +356,9 @@
   let last = 0;
 
   const DIFF = {
-    easy:   { interval: 3.0, spend: .7, buffer: 3, random: true,  defend: false, moveEvery: 9, maxMove: 20 },
-    medium: { interval: 1.6, spend: .55, buffer: 2, random: false, defend: false, moveEvery: 5, maxMove: 30 },
-    hard:   { interval: 0.8, spend: .5, buffer: 1, random: false, defend: true,  moveEvery: 3, maxMove: 40 },
+    easy:   { interval: 3.0, spend: .7, hoard: 40, buffer: 3, random: true,  defend: false, moveEvery: 9, maxMove: 20 },
+    medium: { interval: 1.6, spend: .55, hoard: 60, buffer: 2, random: false, defend: false, moveEvery: 5, maxMove: 30 },
+    hard:   { interval: 0.8, spend: .5, hoard: 80, buffer: 1, random: false, defend: true,  moveEvery: 3, maxMove: 40 },
   };
 
   function resize() {
@@ -749,6 +749,8 @@
     const options = [];
     for (const t of cells) {
       if (t.owner === B) continue;
+      // в режиме живых клеток бот копит единицы, чтобы раздуть клетки, и не атакует врагов слишком рано
+      if (dynMode && t.owner && total < cfg.hoard * myCells.length) continue;
       // нейтральную клетку, которую уже атакует кто-то другой, не трогаем: иначе мы лишь ослабим её для третьего
       if (t.owner === 0 && hostileIn(t, B) > 0) continue;
       // стрелять можно только из клеток, у которых путь к цели не перекрыт другой клеткой
