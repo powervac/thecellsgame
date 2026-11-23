@@ -1158,7 +1158,7 @@
   function cellSprite(c) {
     const zb = Math.min(2.5, Math.max(.25, Math.round(zoom * 4) / 4));
     if (zb !== spriteZB || dpr !== spriteDpr) { spriteZB = zb; spriteDpr = dpr; spriteCache = new Map(); }
-    const key = c.owner * 1000 + Math.round(c.size);
+    const key = c.owner * 100000 + Math.round(c.r * 10);   // радиус в ключе: режимы клеток дают разный радиус при одном размере
     let e = spriteCache.get(key);
     if (e) return e;
     const r = c.r, pad = 40, S = (r + pad) * 2, k = dpr * zb;
