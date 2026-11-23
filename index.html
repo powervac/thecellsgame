@@ -970,7 +970,8 @@
     if (isTap && state === 'play') {
       const c = cellAt(pointer);
       if (c && c.owner === 1) {                  // тап по своей клетке — выбрать для перемещения
-                if (moveSel.has(c)) moveSel.delete(c); else moveSel.add(c);
+                if (info && info.shift) { if (moveSel.has(c)) moveSel.delete(c); else moveSel.add(c); }   // Shift/Ctrl: добавить или убрать
+        else moveSel = new Set([c]);                                                              // обычный клик: выбрана только эта клетка
         lastTap = null;
       } else if (!c) {                           // одиночный тап по пустому месту — переместить выбранные
         if (moveSel.size) { if (info && info.touch) moveTo(pointer); else moveSel = new Set(); }   // мышь: тап по пустому снимает выделение; палец: летят туда
