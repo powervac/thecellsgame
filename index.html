@@ -936,11 +936,7 @@
   function moveTo(p) {
     const list = [...moveSel].filter(c => c.owner === 1);
     if (!list.length) return;
-    if (list.length > 1) {                               // группа: все летят в одну точку, режим пути только для одной клетки
-      for (const c of list) { c.path = []; c.dest = { x: p.x, y: p.y }; c.stuck = 0; sfxLaunchMove(c, true); }
-      moveSel = new Set(); pathSig = '';
-      return;
-    }
+    if (list.length > 1) return;                         // группой можно только атаковать; двигать (и прокладывать путь) можно одну клетку
     const sig = list.map(c => c.id).join(',');
     const fresh = sig !== pathSig;                       // новое выделение: заменяем прежний путь
     pathSig = sig;
@@ -1260,7 +1256,7 @@
     const [bc, bu] = stat(1), [rc, ru] = stat(2), [gc, gu] = stat(3);
     setTxt('bc', bc); setTxt('bu', bu); setTxt('rc', rc); setTxt('ru', ru); setTxt('gc', gc); setTxt('gu', gu);
     const ht = dragging ? 'Отпустите на цели, чтобы отправить единицы'
-      : moveSel.size ? 'Выделено: ' + moveSel.size + '. Тяните к цели — атака, тап по пустому месту — лететь туда (у одной клетки следующие тапы добавляют точки маршрута). Esc / правая кнопка — выйти'
+      : moveSel.size ? 'Выделено: ' + moveSel.size + '. Тяните к цели — атака' + (moveSel.size === 1 ? ', тап по пустому месту — лететь туда (следующие тапы добавляют точки маршрута)' : '') + '. Esc / правая кнопка — выйти'
       : 'Зажмите и перетащите, чтобы атаковать';
     if ($('hintText').textContent !== ht) $('hintText').textContent = ht;
   }
