@@ -450,6 +450,7 @@
     return genCells();
   }
 
+  const radiusDyn = size => 14 + size * 0.2;          // в режиме живых клеток радиус растёт втрое медленнее: 250 -> 64 px
   const POP_UNITS = 250;                              // в режиме живых клеток клетка с таким числом единиц лопается навсегда
   function popCell(c) {
     const col = c.owner ? UCOL[c.owner] : '215,230,255';
@@ -477,7 +478,7 @@
   function newGame() {
     applyMap();
     cells = genCells();
-    if (dynMode) for (const c of cells) { c.size = dynTarget(c); c.r = radiusOf(Math.round(c.size)); }
+    if (dynMode) for (const c of cells) { c.size = dynTarget(c); c.r = radiusDyn(Math.round(c.size)); }
     squads = []; fx = [];
     sel = new Set(); tgts = []; dragging = false; moveSel = new Set(); lastTap = null;
     if (mapMode === 'big') {
@@ -578,16 +579,16 @@
       for (const c of cells) {
         // растём только до соседей: клетки не налезают друг на друга
         let room = Infinity;
-        const Rc = radiusOf(dynTarget(c));
+        const Rc = radiusDyn(dynTarget(c));
         for (const o of cells) {
           if (o === c) continue;
           const d = dist(c, o);
           // место между двумя клетками делится пропорционально желаемым размерам: у кого единиц больше, та и крупнее
-          room = Math.min(room, Math.max((d - 4) * Rc / (Rc + radiusOf(dynTarget(o))), d - o.r - 4));
+          room = Math.min(room, Math.max((d - 4) * Rc / (Rc + radiusDyn(dynTarget(o))), d - o.r - 4));
         }
-        const fit = Math.max(10, (room - 14) / 0.6);
+        const fit = Math.max(10, (room - 14) / 0.2);
         c.size += (Math.min(dynTarget(c), fit) - c.size) * Math.min(1, dt * 3);
-        c.r = radiusOf(Math.round(c.size));
+        c.r = radiusDyn(Math.round(c.size));
       }
       for (const c of cells.filter(c => c.units >= POP_UNITS)) popCell(c);
     }
