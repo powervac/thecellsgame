@@ -561,7 +561,13 @@
       for (const c of cells) {
         // растём только до соседей: клетки не налезают друг на друга
         let room = Infinity;
-        for (const o of cells) if (o !== c) room = Math.min(room, dist(c, o) - o.r - 4);
+        const Rc = radiusOf(dynTarget(c));
+        for (const o of cells) {
+          if (o === c) continue;
+          const d = dist(c, o);
+          // место между двумя клетками делится пропорционально желаемым размерам: у кого единиц больше, та и крупнее
+          room = Math.min(room, Math.max((d - 4) * Rc / (Rc + radiusOf(dynTarget(o))), d - o.r - 4));
+        }
         const fit = Math.max(10, (room - 14) / 0.6);
         c.size += (Math.min(dynTarget(c), fit) - c.size) * Math.min(1, dt * 3);
         c.r = radiusOf(Math.round(c.size));
