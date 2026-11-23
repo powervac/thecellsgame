@@ -77,6 +77,11 @@
       <button data-m="normal">Обычная</button>
       <button data-m="big">Большая ×9</button>
     </div>
+    <div class="label">Клетки</div>
+    <div class="row" id="dynRow">
+      <button data-y="0">Обычные</button>
+      <button data-y="1">Живые (эксперимент)</button>
+    </div>
     <div class="label">Сложность</div>
     <div class="row" id="diffRow">
       <button data-d="easy">Лёгкий</button>
@@ -94,6 +99,8 @@
     normal: { W: 1200, H: 720,  N: 20,  SPEED: 150, edge: 75,  spread: 90,  greenY: 14, greenX: 1 / 6 },
     big:    { W: 3600, H: 2160, N: 180, SPEED: 200, edge: 160, spread: 160, greenY: 60, greenX: 1 / 3 },
   };
+  let dynMode = false;                // эксперимент: размер клетки следует за числом единиц
+  try { dynMode = localStorage.getItem('cells-dyn') === '1'; } catch (e) {}
   let mapMode = 'big', MAP = MAPS.big;
   try { if (localStorage.getItem('cells-map') in MAPS) mapMode = localStorage.getItem('cells-map'); } catch (e) {}
   MAP = MAPS[mapMode];
@@ -443,6 +450,8 @@
     return genCells();
   }
 
+  const dynTarget = c => Math.max(10, Math.min(50, c.units));
+
   function applyMap() {
     MAP = MAPS[mapMode]; W = MAP.W; H = MAP.H; N = MAP.N; SPEED = MAP.SPEED;
     resize();                                         // пересчитать допустимый масштаб
@@ -451,6 +460,7 @@
   function newGame() {
     applyMap();
     cells = genCells();
+    if (dynMode) for (const c of cells) { c.size = dynTarget(c); c.r = radiusOf(Math.round(c.size)); }
     squads = []; fx = [];
     sel = new Set(); tgts = []; dragging = false; moveSel = new Set(); lastTap = null;
     if (mapMode === 'big') {
@@ -547,6 +557,12 @@
 
   function update(dt) {
     for (const c of cells) if (c.owner) c.units += dt * rate(c);
+    if (dynMode) {                                   // клетка раздувается от единиц и сдувается, когда они уходят
+      for (const c of cells) {
+        c.size += (dynTarget(c) - c.size) * Math.min(1, dt * 3);
+        c.r = radiusOf(Math.round(c.size));
+      }
+    }
 
     updateFx(dt);
 
@@ -962,6 +978,14 @@
       try { localStorage.setItem('cells-map', mapMode); } catch (e) {}
     });
   });
+  document.querySelectorAll('#dynRow button').forEach(b => {
+    b.classList.toggle('on', (b.dataset.y === '1') === dynMode);
+    b.addEventListener('click', () => {
+      dynMode = b.dataset.y === '1';
+      document.querySelectorAll('#dynRow button').forEach(x => x.classList.toggle('on', x === b));
+      try { localStorage.setItem('cells-dyn', dynMode ? '1' : '0'); } catch (e) {}
+    });
+  });
   $('playBtn').addEventListener('click', newGame);
   $('restart').addEventListener('click', newGame);
   $('mute').addEventListener('click', () => { audio(); setMuted(!muted); });
@@ -1103,7 +1127,7 @@
   function cellSprite(c) {
     const zb = Math.min(2.5, Math.max(.25, Math.round(zoom * 4) / 4));
     if (zb !== spriteZB || dpr !== spriteDpr) { spriteZB = zb; spriteDpr = dpr; spriteCache = new Map(); }
-    const key = c.owner * 100 + c.size;
+    const key = c.owner * 100 + Math.round(c.size);
     let e = spriteCache.get(key);
     if (e) return e;
     const r = c.r, pad = 40, S = (r + pad) * 2, k = dpr * zb;
