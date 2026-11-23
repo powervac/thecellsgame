@@ -876,6 +876,13 @@
       moveSel = new Set(cells.filter(c => c.owner === 1));
       e.preventDefault();
     }
+    if (e.code === 'KeyS' && !e.ctrlKey && !e.metaKey && !e.altKey && state === 'play') {   // S: остановить высылку юнитов у выбранных клеток
+      for (const c of moveSel) if (c.owner === 1 && c.orders.length) {
+        c.orders = []; c.acc = 0;
+        fx.push({ k: 'ring', x: c.x, y: c.y, col: '241,245,249', t: 0, life: .35, r0: c.r, r1: c.r + 14 });
+      }
+      e.preventDefault();
+    }
     const dg = /^(?:Digit|Numpad)([0-9])$/.exec(e.code);
     if (dg && state === 'play') {
       const n = dg[1];
@@ -1286,7 +1293,7 @@
       if (keys.has('ArrowLeft')) mx -= 1;
       if (keys.has('ArrowRight') || keys.has('KeyD')) mx += 1;
       if (keys.has('ArrowUp') || keys.has('KeyW')) my -= 1;
-      if (keys.has('ArrowDown') || keys.has('KeyS')) my += 1;
+      if (keys.has('ArrowDown')) my += 1;
       if (dragging || box) {                                       // при выделении или перетаскивании у края экрана камера едет сама
         const E = 36;
         if (lastScreen.x < E) mx -= 1; if (lastScreen.x > innerWidth - E) mx += 1;
