@@ -559,7 +559,11 @@
     for (const c of cells) if (c.owner) c.units += dt * rate(c);
     if (dynMode) {                                   // клетка раздувается от единиц и сдувается, когда они уходят
       for (const c of cells) {
-        c.size += (dynTarget(c) - c.size) * Math.min(1, dt * 3);
+        // растём только до соседей: клетки не налезают друг на друга
+        let room = Infinity;
+        for (const o of cells) if (o !== c) room = Math.min(room, dist(c, o) - o.r - 4);
+        const fit = Math.max(10, (room - 14) / 0.6);
+        c.size += (Math.min(dynTarget(c), fit) - c.size) * Math.min(1, dt * 3);
         c.r = radiusOf(Math.round(c.size));
       }
     }
