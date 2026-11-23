@@ -871,6 +871,10 @@
   canvas.addEventListener('contextmenu', e => e.preventDefault());
   addEventListener('keydown', e => {
     if (e.key === 'Escape') { moveSel = new Set(); sel = new Set(); tgts = []; box = null; }   // снять выделение со всех
+    if (e.code === 'KeyA' && !e.ctrlKey && !e.metaKey && !e.altKey && state === 'play') {   // A: выделить все свои клетки
+      moveSel = new Set(cells.filter(c => c.owner === 1));
+      e.preventDefault();
+    }
     const dg = /^(?:Digit|Numpad)([0-9])$/.exec(e.code);
     if (dg && state === 'play') {
       const n = dg[1];
@@ -1278,7 +1282,7 @@
     if (state === 'play') {
       const sp = 900 / zoom * dt;
       let mx = 0, my = 0;
-      if (keys.has('ArrowLeft') || keys.has('KeyA')) mx -= 1;
+      if (keys.has('ArrowLeft')) mx -= 1;
       if (keys.has('ArrowRight') || keys.has('KeyD')) mx += 1;
       if (keys.has('ArrowUp') || keys.has('KeyW')) my -= 1;
       if (keys.has('ArrowDown') || keys.has('KeyS')) my += 1;
