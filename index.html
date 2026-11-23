@@ -351,7 +351,6 @@
   let state = 'menu';            // menu | play | end
   let diff = 'medium';
   let botTimer = { 2: 0, 3: 0 }, botMoveTimer = { 2: 0, 3: 0 };
-  let pathSig = '';
   let moveSel = new Set(), lastTap = null, downInfo = null, box = null;
   let sel = new Set(), tgts = [], dragging = false, pointer = { x:0, y:0 };
   let last = 0;
@@ -481,7 +480,7 @@
     cells = genCells();
     if (dynMode) for (const c of cells) { c.size = dynTarget(c); c.r = radiusDyn(Math.round(c.size)); }
     squads = []; fx = [];
-    sel = new Set(); tgts = []; dragging = false; moveSel = new Set(); pathSig = ''; lastTap = null;
+    sel = new Set(); tgts = []; dragging = false; moveSel = new Set(); lastTap = null;
     if (mapMode === 'big') {
       zoom = clampZ(innerWidth / 1300);
       const me = cells.find(c => c.owner === 1); centerOn(me.x + 250, me.y - 100);
@@ -858,7 +857,7 @@
 
   canvas.addEventListener('contextmenu', e => e.preventDefault());
   addEventListener('keydown', e => {
-    if (e.key === 'Escape') { moveSel = new Set(); pathSig = ''; }
+    if (e.key === 'Escape') { moveSel = new Set(); }
     if (e.code === 'Space' || e.code === 'Home') {                 // вернуть камеру к своим клеткам
       const mine = cells.filter(c => c.owner === 1);
       if (mine.length) { const b = mine.reduce((a, c) => (c.size > a.size ? c : a)); centerOn(b.x, b.y); }
@@ -891,7 +890,7 @@
     canvas.setPointerCapture(e.pointerId);
     pointer = toWorld(e);
     const c = cellAt(pointer);
-    downInfo = { x: pointer.x, y: pointer.y, t: performance.now(), cell: c, shift: e.shiftKey || e.ctrlKey };
+    downInfo = { x: pointer.x, y: pointer.y, t: performance.now(), cell: c, shift: e.shiftKey || e.ctrlKey, touch: e.pointerType === 'touch' };
     if (c && c.owner === 1) {
       // если нажали на клетку из выделенной группы, атакуем сразу из всей группы
       sel = (moveSel.has(c) && moveSel.size > 1) ? new Set(moveSel) : new Set([c]);
@@ -931,19 +930,12 @@
       touch(cellAt({ x: prev.x + (pointer.x - prev.x) * i / steps, y: prev.y + (pointer.y - prev.y) * i / steps }));
     }
   });
-  // режим прокладки пути только для одной выбранной клетки: первый тап задаёт точку, следующие добавляют точки маршрута.
-  // Выход из режима: правая кнопка мыши или Esc.
-  function moveTo(p) {
+  // правая кнопка: выделенные клетки летят в точку (все в одну). С Shift точка добавляется в маршрут.
+  function moveTo(p, append) {
     const list = [...moveSel].filter(c => c.owner === 1);
-    if (!list.length) return;
-    if (list.length > 1) return;                         // группой можно только атаковать; двигать (и прокладывать путь) можно одну клетку
-    const sig = list.map(c => c.id).join(',');
-    const fresh = sig !== pathSig;                       // новое выделение: заменяем прежний путь
-    pathSig = sig;
     for (const c of list) {
-      if (fresh) { c.path = []; c.dest = { x: p.x, y: p.y }; }
-      else if (!c.dest) c.dest = { x: p.x, y: p.y };
-      else c.path.push({ x: p.x, y: p.y });
+      if (append && c.dest) c.path.push({ x: p.x, y: p.y });
+      else { c.path = []; c.dest = { x: p.x, y: p.y }; }
       c.stuck = 0;
     }
     list.forEach(c => sfxLaunchMove(c, true));
@@ -958,8 +950,7 @@
       if (!isTap && state === 'play') {            // рамкой выделяем свои клетки
         const x0 = Math.min(b.x0, b.x1), x1 = Math.max(b.x0, b.x1), y0 = Math.min(b.y0, b.y1), y1 = Math.max(b.y0, b.y1);
         const picked = cells.filter(c => c.owner === 1 && c.x + c.r >= x0 && c.x - c.r <= x1 && c.y + c.r >= y0 && c.y - c.r <= y1);
-        pathSig = '';
-        moveSel = (info && info.shift) ? new Set([...moveSel, ...picked]) : new Set(picked);
+                moveSel = (info && info.shift) ? new Set([...moveSel, ...picked]) : new Set(picked);
         lastTap = null;
         return;
       }
@@ -967,11 +958,10 @@
     if (isTap && state === 'play') {
       const c = cellAt(pointer);
       if (c && c.owner === 1) {                  // тап по своей клетке — выбрать для перемещения
-        pathSig = '';
-        if (moveSel.has(c)) moveSel.delete(c); else moveSel.add(c);
+                if (moveSel.has(c)) moveSel.delete(c); else moveSel.add(c);
         lastTap = null;
       } else if (!c) {                           // одиночный тап по пустому месту — переместить выбранные
-        if (moveSel.size) moveTo(pointer);
+        if (moveSel.size) { if (info && info.touch) moveTo(pointer); else moveSel = new Set(); }   // мышь: тап по пустому снимает выделение; палец: летят туда
         lastTap = null;
       } else lastTap = null;
       dragging = false; sel = new Set(); tgts = [];
@@ -995,13 +985,12 @@
     if (panning) {
       if (panning.btn === 2 && !panning.moved) {
         // правый клик по своей клетке: она перестаёт отдавать единицы (отменяются все её очереди)
-        const c = cellAt(toWorld(e));
+        const w = toWorld(e), c = cellAt(w);
         if (c && c.owner === 1) {
           const group = moveSel.has(c) ? [...moveSel] : [c];
           for (const m of group) { m.orders = []; m.acc = 0; }
           fx.push({ k: 'ring', x: c.x, y: c.y, col: '241,245,249', t: 0, life: .35, r0: c.r, r1: c.r + 14 });
-        }
-        moveSel = new Set(); pathSig = '';                           // правый клик выходит из режима выбора и прокладки пути
+        } else if (!c && moveSel.size) moveTo(w, e.shiftKey);       // правый клик по пустому месту: выделенные клетки летят туда
       }
       panning = null; return;
     }
@@ -1256,7 +1245,7 @@
     const [bc, bu] = stat(1), [rc, ru] = stat(2), [gc, gu] = stat(3);
     setTxt('bc', bc); setTxt('bu', bu); setTxt('rc', rc); setTxt('ru', ru); setTxt('gc', gc); setTxt('gu', gu);
     const ht = dragging ? 'Отпустите на цели, чтобы отправить единицы'
-      : moveSel.size ? 'Выделено: ' + moveSel.size + '. Тяните к цели — атака' + (moveSel.size === 1 ? ', тап по пустому месту — лететь туда (следующие тапы добавляют точки маршрута)' : '') + '. Esc / правая кнопка — выйти'
+      : moveSel.size ? 'Выделено: ' + moveSel.size + '. Левая: тяните к цели — атака. Правая кнопка по пустому месту — лететь туда (Shift — добавить точку маршрута), по своей клетке — прекратить отправку. Esc — снять'
       : 'Зажмите и перетащите, чтобы атаковать';
     if ($('hintText').textContent !== ht) $('hintText').textContent = ht;
   }
