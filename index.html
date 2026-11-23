@@ -653,6 +653,7 @@
           if (dc > c.r + UR + 2) u.left = true;
           continue;
         }
+        if (c.owner === u.owner && c !== u.target) continue;       // свои единицы пролетают сквозь свои клетки
         if (dc <= c.r) { u.target = c; u.arrived = true; break; }
       }
     }
@@ -723,7 +724,7 @@
   function pathBlocker(src, t) {
     const dx = t.x - src.x, dy = t.y - src.y, L2 = dx * dx + dy * dy || 1;
     for (const c of cells) {
-      if (c === src || c === t) continue;
+      if (c === src || c === t || c.owner === src.owner) continue;   // свои клетки не мешают
       const u = ((c.x - src.x) * dx + (c.y - src.y) * dy) / L2;
       if (u <= 0 || u >= 1) continue;
       if (Math.hypot(c.x - (src.x + dx * u), c.y - (src.y + dy * u)) < c.r + UR + 3) return c;
