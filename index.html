@@ -195,7 +195,7 @@
   function sfxExplode0(c) {
     if (!audio() || muted) return;
     sndScale = sv(c); if (!sndScale) return;
-    const k = (c.size - 10) / 40;                    // 0 (клетка 10) ... 1 (клетка 50)
+    const k = Math.min(1, (c.size - 10) / 40);                    // 0 (клетка 10) ... 1 (клетка 50)
     const dest = out(c.x), wet = getRev();
     const t0 = AC.currentTime;
     const layer = (type, f0, f1, dur, vol, delay, q, dist, send) => {
@@ -450,7 +450,7 @@
     return genCells();
   }
 
-  const dynTarget = c => Math.max(10, Math.min(50, c.units));
+  const dynTarget = c => Math.max(10, Math.min(250, c.units));
 
   function applyMap() {
     MAP = MAPS[mapMode]; W = MAP.W; H = MAP.H; N = MAP.N; SPEED = MAP.SPEED;
