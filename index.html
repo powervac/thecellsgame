@@ -351,6 +351,7 @@
   let state = 'menu';            // menu | play | end
   let diff = 'medium';
   let botTimer = { 2: 0, 3: 0 }, botMoveTimer = { 2: 0, 3: 0 };
+  let pathSig = '';
   let moveSel = new Set(), lastTap = null, downInfo = null, box = null;
   let sel = new Set(), tgts = [], dragging = false, pointer = { x:0, y:0 };
   let last = 0;
@@ -422,7 +423,7 @@
 
   // ---------- генерация ----------
   function mk(x, y, owner, size, units) {
-    return { x, y, owner, size, r: radiusOf(size), units, orders: [], acc: 0, dest: null, vx: 0, vy: 0, stuck: 0, flash: 0 };
+    return { x, y, owner, size, r: radiusOf(size), units, orders: [], acc: 0, dest: null, path: [], vx: 0, vy: 0, stuck: 0, flash: 0 };
   }
 
   function genCells() {
@@ -480,7 +481,7 @@
     cells = genCells();
     if (dynMode) for (const c of cells) { c.size = dynTarget(c); c.r = radiusDyn(Math.round(c.size)); }
     squads = []; fx = [];
-    sel = new Set(); tgts = []; dragging = false; moveSel = new Set(); lastTap = null;
+    sel = new Set(); tgts = []; dragging = false; moveSel = new Set(); pathSig = ''; lastTap = null;
     if (mapMode === 'big') {
       zoom = clampZ(innerWidth / 1300);
       const me = cells.find(c => c.owner === 1); centerOn(me.x + 250, me.y - 100);
@@ -526,11 +527,18 @@
     }
   }
 
+  // дошли до точки (или застряли): едем к следующей точке пути, если она есть
+  function nextWp(c) {
+    c.dest = (c.path && c.path.length) ? c.path.shift() : null;
+    if (!c.dest) c.vx = c.vy = 0;
+    c.stuck = 0;
+  }
+
   function moveCell(c, dt) {
     const sp = moveSpeed(c);
     let dx = c.dest.x - c.x, dy = c.dest.y - c.y;
     const d = Math.hypot(dx, dy);
-    if (d < 3) { c.dest = null; c.vx = c.vy = 0; return; }
+    if (d < 3) { nextWp(c); return; }
     dx /= d; dy /= d;
     const near = Math.min(1, d / (c.r + 30));         // плавное торможение у цели
     let wx = dx * sp * near, wy = dy * sp * near;
@@ -570,7 +578,7 @@
     // застряла — останавливаемся
     const moved = Math.hypot(c.x - px, c.y - py) / dt;
     c.stuck = moved < sp * 0.12 ? c.stuck + dt : 0;
-    if (c.stuck > 1.2) { c.dest = null; c.vx = c.vy = 0; c.stuck = 0; }
+    if (c.stuck > 1.2) nextWp(c);
   }
 
   function update(dt) {
@@ -598,7 +606,7 @@
     // движение клеток: плавный облёт других клеток
     for (const c of cells) {
       if (c.owner !== 1) moveSel.delete(c);
-      if (!c.owner) c.dest = null;
+      if (!c.owner) { c.dest = null; c.path = []; }
       if (!c.dest) { c.vx = c.vy = 0; continue; }
       moveCell(c, dt);
     }
@@ -850,7 +858,7 @@
 
   canvas.addEventListener('contextmenu', e => e.preventDefault());
   addEventListener('keydown', e => {
-    if (e.key === 'Escape') moveSel = new Set();
+    if (e.key === 'Escape') { moveSel = new Set(); pathSig = ''; }
     if (e.code === 'Space' || e.code === 'Home') {                 // вернуть камеру к своим клеткам
       const mine = cells.filter(c => c.owner === 1);
       if (mine.length) { const b = mine.reduce((a, c) => (c.size > a.size ? c : a)); centerOn(b.x, b.y); }
@@ -923,15 +931,21 @@
       touch(cellAt({ x: prev.x + (pointer.x - prev.x) * i / steps, y: prev.y + (pointer.y - prev.y) * i / steps }));
     }
   });
+  // режим прокладки пути: первый клик задаёт точку (все выбранные клетки летят в неё), следующие клики добавляют точки пути.
+  // Выход из режима: правая кнопка мыши или Esc.
   function moveTo(p) {
     const list = [...moveSel].filter(c => c.owner === 1);
-    list.forEach((c, i) => {
-      if (list.length === 1) { c.dest = { x: p.x, y: p.y }; return; }
-      const a = i / list.length * Math.PI * 2;
-      c.dest = { x: p.x + Math.cos(a) * 70, y: p.y + Math.sin(a) * 70 };
-    });
+    if (!list.length) return;
+    const sig = list.map(c => c.id).join(',');
+    const fresh = sig !== pathSig;                       // новое выделение: заменяем прежний путь
+    pathSig = sig;
+    for (const c of list) {
+      if (fresh) { c.path = []; c.dest = { x: p.x, y: p.y }; }
+      else if (!c.dest) c.dest = { x: p.x, y: p.y };
+      else c.path.push({ x: p.x, y: p.y });
+      c.stuck = 0;
+    }
     list.forEach(c => sfxLaunchMove(c, true));
-    moveSel = new Set();
   }
 
   function endDrag(e) {
@@ -943,6 +957,7 @@
       if (!isTap && state === 'play') {            // рамкой выделяем свои клетки
         const x0 = Math.min(b.x0, b.x1), x1 = Math.max(b.x0, b.x1), y0 = Math.min(b.y0, b.y1), y1 = Math.max(b.y0, b.y1);
         const picked = cells.filter(c => c.owner === 1 && c.x + c.r >= x0 && c.x - c.r <= x1 && c.y + c.r >= y0 && c.y - c.r <= y1);
+        pathSig = '';
         moveSel = (info && info.shift) ? new Set([...moveSel, ...picked]) : new Set(picked);
         lastTap = null;
         return;
@@ -951,6 +966,7 @@
     if (isTap && state === 'play') {
       const c = cellAt(pointer);
       if (c && c.owner === 1) {                  // тап по своей клетке — выбрать для перемещения
+        pathSig = '';
         if (moveSel.has(c)) moveSel.delete(c); else moveSel.add(c);
         lastTap = null;
       } else if (!c) {                           // одиночный тап по пустому месту — переместить выбранные
@@ -983,7 +999,8 @@
           const group = moveSel.has(c) ? [...moveSel] : [c];
           for (const m of group) { m.orders = []; m.acc = 0; }
           fx.push({ k: 'ring', x: c.x, y: c.y, col: '241,245,249', t: 0, life: .35, r0: c.r, r1: c.r + 14 });
-        } else moveSel = new Set();                                  // правый клик по пустому месту снимает выделение
+        }
+        moveSel = new Set(); pathSig = '';                           // правый клик выходит из режима выбора и прокладки пути
       }
       panning = null; return;
     }
@@ -1053,16 +1070,21 @@
     // граница карты
     ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(100,150,255,.38)'; ctx.strokeRect(0, 0, W, H);
 
-    // цели перемещения
+    // цели перемещения и путь через несколько точек
     for (const c of cells) {
       if (!c.dest) continue;
+      const pts = [c.dest, ...(c.path || [])];
       ctx.setLineDash([2, 8]); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(241,245,249,.55)';
-      ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(c.dest.x, c.dest.y); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(c.x, c.y);
+      for (const q of pts) ctx.lineTo(q.x, q.y);
+      ctx.stroke();
       ctx.setLineDash([]);
       ctx.strokeStyle = 'rgba(241,245,249,.9)';
-      ctx.beginPath(); ctx.arc(c.dest.x, c.dest.y, 9, 0, Math.PI * 2); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(c.dest.x - 5, c.dest.y); ctx.lineTo(c.dest.x + 5, c.dest.y);
-      ctx.moveTo(c.dest.x, c.dest.y - 5); ctx.lineTo(c.dest.x, c.dest.y + 5); ctx.stroke();
+      for (const q of pts) {
+        ctx.beginPath(); ctx.arc(q.x, q.y, 9, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(q.x - 5, q.y); ctx.lineTo(q.x + 5, q.y);
+        ctx.moveTo(q.x, q.y - 5); ctx.lineTo(q.x, q.y + 5); ctx.stroke();
+      }
     }
 
     // запланированные отправки (ещё не вылетевшие единицы)
@@ -1233,7 +1255,7 @@
     const [bc, bu] = stat(1), [rc, ru] = stat(2), [gc, gu] = stat(3);
     setTxt('bc', bc); setTxt('bu', bu); setTxt('rc', rc); setTxt('ru', ru); setTxt('gc', gc); setTxt('gu', gu);
     const ht = dragging ? 'Отпустите на цели, чтобы отправить единицы'
-      : moveSel.size ? 'Выделено: ' + moveSel.size + '. Тяните к цели — атака, тап по пустому месту — переместить. Esc / правая кнопка — снять'
+      : moveSel.size ? 'Выделено: ' + moveSel.size + '. Тяните к цели — атака, тап по пустому месту — лететь туда, следующие тапы добавляют точки пути. Esc / правая кнопка — выйти'
       : 'Зажмите и перетащите, чтобы атаковать';
     if ($('hintText').textContent !== ht) $('hintText').textContent = ht;
   }
