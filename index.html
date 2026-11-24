@@ -99,7 +99,9 @@
     <div class="label">Карта</div>
     <div class="row" id="mapRow">
       <button data-m="normal">Обычная</button>
-      <button data-m="big">Большая ×9</button>
+      <button data-m="x3">×3</button>
+      <button data-m="x6">×6</button>
+      <button data-m="x9">×9</button>
     </div>
     <div class="label">Клетки</div>
     <div class="row" id="dynRow">
@@ -121,11 +123,14 @@
   // режимы карты: обычная (одно поле) и большая (в 9 раз по площади, со скроллингом)
   const MAPS = {
     normal: { bots: 2, bonus: 2, W: 1200, H: 720,  N: 20,  SPEED: 150, edge: 75,  spread: 90,  greenY: 14, greenX: 1 / 6 },
-    big:    { bots: 5, bonus: 18, W: 6240, H: 3744, N: 540, SPEED: 200, edge: 160, spread: 160, greenY: 60, greenX: 1 / 3 },
+    // большие карты: ×3, ×6, ×9 по площади от прежней большой карты 3600×2160 (180 клеток); плотность клеток и бонусов та же
+    x3:     { bots: 5, bonus: 18, W: 6240,  H: 3744, N: 540,  SPEED: 200, edge: 160, spread: 160, greenY: 60, greenX: 1 / 3 },
+    x6:     { bots: 5, bonus: 36, W: 8820,  H: 5292, N: 1080, SPEED: 200, edge: 160, spread: 160, greenY: 60, greenX: 1 / 3 },
+    x9:     { bots: 5, bonus: 54, W: 10800, H: 6480, N: 1620, SPEED: 200, edge: 160, spread: 160, greenY: 60, greenX: 1 / 3 },
   };
   let dynMode = false;                // эксперимент: размер клетки следует за числом единиц
   try { dynMode = localStorage.getItem('cells-dyn') === '1'; } catch (e) {}
-  let mapMode = 'big', MAP = MAPS.big;
+  let mapMode = 'x3', MAP = MAPS.x3;
   try { if (localStorage.getItem('cells-map') in MAPS) mapMode = localStorage.getItem('cells-map'); } catch (e) {}
   MAP = MAPS[mapMode];
   let W = MAP.W, H = MAP.H;
@@ -556,7 +561,7 @@
     squads = []; fx = [];
     for (const k in groups) delete groups[k];
     sel = new Set(); tgts = []; dragging = false; moveSel = new Set(); selAllSet = null; lastTap = null;
-    if (mapMode === 'big') {
+    if (mapMode !== 'normal') {
       zoom = clampZ(innerWidth / 1300);
       const me = cells.find(c => c.owner === 1); centerOn(me.x + 250, me.y - 100);
     } else { zoom = minZoom; clampCam(); }          // на обычной карте видно всё поле целиком
@@ -805,7 +810,7 @@
     }
     for (const u of squads) if (u.arrived && !u.dead) arrive(u);
     squads = squads.filter(u => !u.arrived && !u.dead);
-    incCache = null;
+    incCache = null; pbGrid = null;
 
     if (state === 'play' && balanceOn && (balT -= dt) <= 0) { balT = .25; balanceStep(); }
     if (state === 'play') {
@@ -883,15 +888,33 @@
   const strengthOf = o => cells.reduce((a, c) => a + (c.owner === o ? c.units : 0), 0) + flying().own[o];
 
   // единицы не пролетают сквозь клетки: возвращает клетку, которая перекроет путь от src к t
+  // сетка всех клеток для быстрых запросов ботов; строится не чаще раза за кадр
+  const PG = 200;
+  let pbGrid = null;
+  function cellGridPB() {
+    if (!pbGrid) {
+      pbGrid = new Map();
+      for (const c of cells) { const k = Math.floor(c.x / PG) * 10000 + Math.floor(c.y / PG); let l = pbGrid.get(k); if (!l) pbGrid.set(k, l = []); l.push(c); }
+    }
+    return pbGrid;
+  }
   function pathBlocker(src, t) {
-    const dx = t.x - src.x, dy = t.y - src.y, L2 = dx * dx + dy * dy || 1;
-    const x0 = Math.min(src.x, t.x) - 80, x1 = Math.max(src.x, t.x) + 80, y0 = Math.min(src.y, t.y) - 80, y1 = Math.max(src.y, t.y) + 80;
-    for (const c of cells) {
-      if (c.x < x0 || c.x > x1 || c.y < y0 || c.y > y1) continue;      // вне прямоугольника отрезка: не мешает
-      if (c === src || c === t || c.owner === src.owner) continue;   // свои клетки не мешают
-      const u = ((c.x - src.x) * dx + (c.y - src.y) * dy) / L2;
-      if (u <= 0 || u >= 1) continue;
-      if (Math.hypot(c.x - (src.x + dx * u), c.y - (src.y + dy * u)) < c.r + UR + 3) return c;
+    const dx = t.x - src.x, dy = t.y - src.y, L2 = dx * dx + dy * dy || 1, L = Math.sqrt(L2);
+    const g = cellGridPB();
+    const gx0 = Math.floor((Math.min(src.x, t.x) - 80) / PG), gx1 = Math.floor((Math.max(src.x, t.x) + 80) / PG);
+    const gy0 = Math.floor((Math.min(src.y, t.y) - 80) / PG), gy1 = Math.floor((Math.max(src.y, t.y) + 80) / PG);
+    for (let ix = gx0; ix <= gx1; ix++) for (let iy = gy0; iy <= gy1; iy++) {
+      // ячейки далеко от отрезка пропускаем целиком
+      const cx = (ix + .5) * PG, cy = (iy + .5) * PG;
+      if (Math.abs((cx - src.x) * dy - (cy - src.y) * dx) / L > PG * .75 + 80) continue;
+      const l = g.get(ix * 10000 + iy);
+      if (!l) continue;
+      for (const c of l) {
+        if (c === src || c === t || c.owner === src.owner) continue;   // свои клетки не мешают
+        const u = ((c.x - src.x) * dx + (c.y - src.y) * dy) / L2;
+        if (u <= 0 || u >= 1) continue;
+        if (Math.hypot(c.x - (src.x + dx * u), c.y - (src.y + dy * u)) < c.r + UR + 3) return c;
+      }
     }
     return null;
   }
@@ -927,10 +950,10 @@
   function botRun(B) {
     const q = botQueue[B];
     if (!q || q.n <= 0) return;
-    if (performance.now() - botBudgetT > 4) return;     // бюджет кадра исчерпан: продолжим в следующем
-    q.n--;                                              // хотя бы одно действие за кадр, остальные — пока есть время
-    if (!botAct(B, q.memo)) { q.n = 0; return; }
-    while (q.n > 0 && performance.now() - botBudgetT < 4) { q.n--; if (!botAct(B, q.memo)) { q.n = 0; break; } }
+    while (q.n > 0 && performance.now() - botBudgetT < 4) {   // бюджет кадра исчерпан — продолжим в следующем (очерёдность ботов перемешивается)
+      q.n--;
+      if (!botAct(B, q.memo)) { q.n = 0; break; }
+    }
   }
 
   function botAct(B, memo) {
@@ -992,11 +1015,25 @@
       return found.map(m => ({ m, d: dist(m, t) })).sort((a, b) => a.d - b.d).slice(0, k);
     };
     if (!memo.cand) {                                     // список целей считаем один раз за ход бота, а не перед каждым действием
-      const byD = cells.filter(t => t.owner !== B)
-        .map(t => { const n = nearOwn(t, 1); return { t, d: n.length ? n[0].d : Infinity }; })
-        .sort((a, b) => a.d - b.d);
-      memo.cand = byD.slice(0, 30).map(x => x.t);
-      for (const x of byD.filter(x => x.t.bonus).slice(0, 10)) if (!memo.cand.includes(x.t)) memo.cand.push(x.t);   // ближайшие бонусные клетки бот рассматривает, даже если они далеко
+      const best = new Map();                             // цель -> расстояние до ближайшей своей клетки
+      if (mine.length < 40) {
+        for (const t of cells) if (t.owner !== B) best.set(t, mine.reduce((m, c) => Math.min(m, dist(c, t)), Infinity));
+      } else {
+        const g = cellGridPB();
+        for (let R = 2; R <= 64 && best.size < 40; R *= 2) {   // смотрим вокруг своих клеток, расширяя радиус, пока целей мало
+          for (const m of mine) {
+            const gx = Math.floor(m.x / PG), gy = Math.floor(m.y / PG);
+            for (let ix = gx - R; ix <= gx + R; ix++) for (let iy = gy - R; iy <= gy + R; iy++) {
+              const l = g.get(ix * 10000 + iy); if (!l) continue;
+              for (const t of l) if (t.owner !== B) { const d = dist(m, t), o = best.get(t); if (o === undefined || d < o) best.set(t, d); }
+            }
+          }
+        }
+      }
+      memo.cand = [...best].sort((a, b) => a[1] - b[1]).slice(0, 30).map(x => x[0]);
+      // ближайшие бонусные клетки бот рассматривает, даже если они далеко
+      const bon = cells.filter(t => t.bonus && t.owner !== B).map(t => ({ t, d: mine.reduce((m, c) => Math.min(m, dist(c, t)), Infinity) })).sort((a, b) => a.d - b.d).slice(0, 10);
+      for (const x of bon) if (!memo.cand.includes(x.t)) memo.cand.push(x.t);
     }
     const cand = memo.cand.filter(t => t.owner !== B);
     for (const t of cand) {
