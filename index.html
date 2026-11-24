@@ -663,7 +663,7 @@
       o.x = Math.max(o.r + 4, Math.min(W - o.r - 4, o.x));
       o.y = Math.max(o.r + PADT, Math.min(H - o.r - PADB, o.y));
       if (o.dest) o.stuck = 0;
-      if (depth < 3) separate(o, depth + 1, c);              // сдвинутая клетка может толкнуть следующую
+      if (depth < 1 && !o.dest) separate(o, depth + 1, c);   // сдвинутая стоящая клетка толкает следующую (один уровень: в толпе цепочки слишком дороги)
     }
   }
 
@@ -673,13 +673,14 @@
     const d = Math.hypot(dx, dy);
     if (d < 3) { nextWp(c); return; }
     // группа летит в одну точку: клетки не могут встать в неё все, поэтому считаем, что дошли, когда упёрлись в соседа с той же целью
-    if (d < c.r + 60) {
+    // большая группа занимает круг радиусом ~ корень из её размера: внутри него клетка останавливается, упёршись в уже вставшего соседа ближе к точке
+    if (d < c.r + 60 + 30 * Math.sqrt(c.grp || 1)) {
       for (const o of nearCells(c)) {
         if (o === c || !o.owner || o.owner !== c.owner) continue;
         const od = Math.hypot(o.x - c.x, o.y - c.y);
         if (od > c.r + o.r + 50) continue;
-        const sameGoal = (o.dest && Math.hypot(o.dest.x - c.dest.x, o.dest.y - c.dest.y) < 2) ||
-                         (!o.dest && Math.hypot(o.x - c.dest.x, o.y - c.dest.y) < o.r + 20);   // сосед уже стоит в точке
+        const sameGoal = (o.dest && Math.hypot(o.dest.x - c.dest.x, o.dest.y - c.dest.y) < 2 && d < c.r + 60) ||
+                         (!o.dest && Math.hypot(o.x - c.dest.x, o.y - c.dest.y) < Math.min(d, o.r + 20 + 30 * Math.sqrt(c.grp || 1)));   // сосед уже стоит ближе к точке
         if (sameGoal) { nextWp(c); return; }
       }
     }
@@ -1282,9 +1283,9 @@
     for (const c of list) {
       if (append && c.dest) c.path.push({ x: p.x, y: p.y });
       else { c.path = []; c.dest = { x: p.x, y: p.y }; }
-      c.stuck = 0;
+      c.stuck = 0; c.grp = list.length;
     }
-    list.forEach(c => sfxLaunchMove(c, true));
+    list.slice(0, 3).forEach(c => sfxLaunchMove(c, true));   // звук старта — от пары клеток, а не от сотен
   }
 
   function endDrag(e) {
@@ -1493,9 +1494,15 @@
 
     // клетки
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    selRings = new Path2D();
+    selRings = new Path2D(); lodPaths = new Map();
     for (const c of cells) if (inView(c.x, c.y, c.r + 80)) drawCell(c, now);
-    ctx.setLineDash([5, 5]); ctx.lineWidth = 2; ctx.strokeStyle = '#f1f5f9'; ctx.stroke(selRings); ctx.setLineDash([]);
+    for (const [col, p] of lodPaths) {
+      if (col[0] === 'b') { ctx.lineWidth = 6 / zoom; ctx.strokeStyle = BONUS[col.slice(1)].col; ctx.stroke(p); }   // бонусы издалека — цветное кольцо
+      else { ctx.fillStyle = col; ctx.fill(p); }
+    }
+    const fewSel = moveSel.size <= 60 && zoom > .35;       // пунктир дорогой: при множестве колец или издалека — сплошные бледные
+    if (fewSel) ctx.setLineDash([5, 5]);
+    ctx.lineWidth = fewSel ? 2 : Math.max(2, 1.5 / zoom); ctx.strokeStyle = fewSel ? '#f1f5f9' : 'rgba(241,245,249,.55)'; ctx.stroke(selRings); ctx.setLineDash([]);
 
     // летящие единицы: все единицы одного цвета выводятся разом (один путь и одна заливка), число единиц почти не влияет на скорость
     {
@@ -1535,7 +1542,7 @@
     if (now - miniT > .12) { miniT = now; drawMini(); }
   }
 
-  let selRings = null;
+  let selRings = null, lodPaths = new Map();
   // линии от многих клеток к одной цели объединяем: клетки в одной ячейке 400 px дают одну линию из их центра
   function addGroupedLines(path, pairs) {
     const G = 400, groups = new Map();
@@ -1551,6 +1558,14 @@
   let lineIds = 0;
   function drawCell(c, now) {
     const { x, y, r } = c;
+    if (r * zoom < 8) {                                   // издалека: клетка — простой круг, все круги одного цвета заливаются разом (без свечения и текста)
+      const col = MCOL[c.owner] || 'rgba(205,220,255,.55)';
+      let p = lodPaths.get(col); if (!p) lodPaths.set(col, p = new Path2D());
+      p.moveTo(x + r, y); p.arc(x, y, r, 0, 6.2832);
+      if (moveSel.has(c)) { selRings.moveTo(x + r + 7, y); selRings.arc(x, y, r + 7, 0, 6.2832); }
+      if (c.bonus) { let b = lodPaths.get('b' + c.bonus); if (!b) lodPaths.set('b' + c.bonus, b = new Path2D()); b.moveTo(x + r + 10, y); b.arc(x, y, r + 10, 0, 6.2832); }
+      return;
+    }
     const pulse = c.owner ? 0.75 + 0.25 * Math.sin(now * 2 + c.id) : 1;
     const e = cellSprite(c);
     ctx.globalAlpha = c.owner ? .82 + .18 * pulse : 1;
