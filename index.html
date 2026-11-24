@@ -654,8 +654,8 @@
     // выпуск единиц цепочкой
     for (const c of cells) {
       if (!c.orders.length) { c.acc = 0; continue; }
-      const bm = balanceOn && c.owner === 1 && c.orders.every(o => o.target.owner === 1 || o.target.recap > gameT) ? 9 : 1;   // в режиме выравнивания обмен между своими клетками в 9 раз быстрее обычной высылки
-      c.acc = Math.min(c.acc + dt * launchRate(c) * bm, 12);
+      const bm = balanceOn && c.owner === 1 && c.orders.every(o => o.target.owner === 1 || o.target.recap > gameT) ? 9 * Math.min(50, Math.max(1, c.units / balMean)) : 1;   // в режиме выравнивания обмен между своими клетками в 9 раз быстрее обычной высылки
+      c.acc = Math.min(c.acc + dt * launchRate(c) * bm, 150);
       while (c.acc >= 1 && c.orders.length) {
         if (c.units < 1) break;
         c.rr = (c.rr || 0) % c.orders.length;
@@ -742,7 +742,7 @@
   }
 
   // режим F: свои клетки отправляют излишки единиц тем, у кого их меньше среднего
-  let balanceOn = false, balT = 0;
+  let balanceOn = false, balT = 0, balMean = 1;   // balMean: среднее число единиц в своих клетках; чем сильнее клетка выше среднего, тем быстрее она отдаёт
   function balanceStep() {
     const own = cells.filter(c => c.owner === 1);
     if (own.length < 2) return;
@@ -750,6 +750,7 @@
     for (const c of own) fut.set(c, c.units - reserved(c) + incoming(c, 1));
     let tot = 0; for (const c of own) tot += fut.get(c);
     const m = tot / own.length;
+    balMean = Math.max(1, m);
     const give = own.slice().sort((a, b) => fut.get(b) - fut.get(a));
     const need = own.filter(c => fut.get(c) < m - 1);
     for (const c of cells) if (c.owner > 1 && c.recap > gameT) need.push(c);   // недавно потерянные клетки: ещё 10 секунд посылаем туда единицы, чтобы вернуть
