@@ -154,7 +154,10 @@
     if (!AC) {
       try {
         AC = new (window.AudioContext || window.webkitAudioContext)();
-        master = AC.createGain(); master.gain.value = muted ? 0 : .55; master.connect(AC.destination);
+        master = AC.createGain(); master.gain.value = muted ? 0 : .55;
+        const comp = AC.createDynamicsCompressor();          // компрессор: когда звуков много, громкость сглаживается, а не уходит в перегруз и хрип
+        comp.threshold.value = -16; comp.knee.value = 12; comp.ratio.value = 8; comp.attack.value = .003; comp.release.value = .2;
+        master.connect(comp); comp.connect(AC.destination);
         noiseBuf = AC.createBuffer(1, AC.sampleRate * 1.5, AC.sampleRate);
         const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
         startHum();
@@ -171,8 +174,17 @@
   let sndScale = 1;                                    // громкость события по расстоянию до экрана
   const sv = c => inView(c.x, c.y, 0) ? 1 : inView(c.x, c.y, 500) ? .3 : 0;
   const safe = fn => (...a) => { try { return fn(...a); } catch (e) { console.warn('audio', e); } };
+  // одновременно звучит не больше MAXV голосов: тысяча столкновений в секунду не превращается в хрип
+  const MAXV = 14, voices = [];
+  function voiceOk(dur) {
+    const t = AC.currentTime;
+    while (voices.length && voices[0] < t) voices.shift();
+    if (voices.length >= MAXV) return false;
+    voices.push(t + dur); voices.sort((a, b) => a - b);
+    return true;
+  }
   function tone(x, f0, f1, dur, type, vol) {
-    if (!audio() || muted) return;
+    if (!audio() || muted || !voiceOk(dur)) return;
     vol *= sndScale;
     if (vol < 0.0002) return;
     const t = AC.currentTime, o = AC.createOscillator(), g = AC.createGain();
@@ -181,7 +193,7 @@
     o.connect(g); g.connect(out(x)); o.start(t); o.stop(t + dur + .02);
   }
   function noise(x, dur, vol, f0, f1, type, delay, q) {
-    if (!audio() || muted) return;
+    if (!audio() || muted || !voiceOk(dur + (delay || 0))) return;
     vol *= sndScale;
     if (vol < 0.0002) return;
     const t = AC.currentTime + (delay || 0), src = AC.createBufferSource(), fl = AC.createBiquadFilter(), g = AC.createGain();
@@ -196,10 +208,10 @@
     sndScale = sv(c); if (!sndScale) return;
     const t = nowMs();
     if (kind === 'join') {
-      if (t - lastT.join < 90) return; lastT.join = t;
+      if (t - lastT.join < 140) return; lastT.join = t;
       tone(c.x, 880 + Math.random() * 120, 1100, .07, 'sine', .035);
     } else if (kind === 'hit') {
-      if (t - lastT.hit < 45) return; lastT.hit = t;
+      if (t - lastT.hit < 110) return; lastT.hit = t;
       const f = 420 + Math.random() * 160 - c.size;       // крупные клетки звучат ниже
       tone(c.x, f, f * .45, .11, 'triangle', .11);
       noise(c.x, .05, .05, 3500, 1200, 'highpass');
@@ -230,6 +242,11 @@
   function sfxExplode0(c) {
     if (!audio() || muted) return;
     sndScale = sv(c); if (!sndScale) return;
+    const tn = nowMs();
+    if (tn - (lastT.boom || 0) < 220 || voices.length > MAXV - 4) return;   // взрывы не чаще ~4 в секунду и только при свободных голосах
+    lastT.boom = tn;
+    for (let i = 0; i < 4; i++) voices.push(AC.currentTime + .4);
+    voices.sort((a, b) => a - b);
     const k = Math.min(1, (c.size - 10) / 40);                    // 0 (клетка 10) ... 1 (клетка 50)
     const dest = out(c.x), wet = getRev();
     const t0 = AC.currentTime;
@@ -253,7 +270,7 @@
     // 3. шипящая середина
     layer('bandpass', 2200 - 1200 * k, 500, .3 + .3 * k, .3, .012, .8, false, .5);
     // 4. осколки: короткие щелчки, разбросанные по времени
-    const n = 9 - Math.round(3 * k);
+    const n = 5 - Math.round(2 * k);
     for (let i = 0; i < n; i++) {
       layer('bandpass', (1400 + Math.random() * 2400) * (1 - .5 * k), 500, .05 + Math.random() * .04, .12 * (1 - .5 * k),
             .06 + Math.random() * (.45 + .4 * k), 1.8, false, .4);
@@ -1401,14 +1418,15 @@
 
     // цели перемещения и путь через несколько точек
     {                                                    // маршруты своих клеток: одна обводка на линии и одна на метки точек
-      const lines = new Path2D(), marks = new Path2D(), seen = new Set();
+      const lines = new Path2D(), marks = new Path2D(), seen = new Set(), routePairs = [];
       let nl = 0;
       for (const c of cells) {
         if (!c.dest || c.owner !== 1) continue;
         const pts = [c.dest, ...(c.path || [])];
         let px = c.x, py = c.y;
         for (const q of pts) {
-          if (inView((px + q.x) / 2, (py + q.y) / 2, Math.hypot(q.x - px, q.y - py) / 2 + 20)) { lines.moveTo(px, py); lines.lineTo(q.x, q.y); nl++; }
+          if (moveSel.size > 20 && px === c.x) { routePairs.push([c, q]); px = q.x; py = q.y; }    // много клеток: первый отрезок рисуем группами
+          else if (inView((px + q.x) / 2, (py + q.y) / 2, Math.hypot(q.x - px, q.y - py) / 2 + 20)) { lines.moveTo(px, py); lines.lineTo(q.x, q.y); nl++; }
           px = q.x; py = q.y;
           const key = Math.round(q.x) + ',' + Math.round(q.y);     // общая точка группы рисуется один раз
           if (seen.has(key) || !inView(q.x, q.y, 20)) continue;
@@ -1417,6 +1435,7 @@
           marks.moveTo(q.x - 5, q.y); marks.lineTo(q.x + 5, q.y); marks.moveTo(q.x, q.y - 5); marks.lineTo(q.x, q.y + 5);
         }
       }
+      if (routePairs.length) nl += addGroupedLines(lines, routePairs);
       if (nl) {
         ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(241,245,249,' + (nl > 40 ? .25 : .55) + ')';
         if (nl <= 40) ctx.setLineDash([2, 8]);            // пунктир дорогой: при множестве маршрутов — сплошные бледные
@@ -1428,20 +1447,21 @@
     // запланированные отправки (ещё не вылетевшие единицы)
     {                                                    // все линии очередей — одной обводкой и только те, что видны на экране
       const vx0 = cam.x, vy0 = cam.y, vx1 = cam.x + innerWidth / zoom, vy1 = cam.y + VH / zoom;
-      let nl = 0;
-      ctx.beginPath();
+      const pairs = [];
       for (const c of cells) {
         if (c.owner !== 1) continue;
         for (const o of c.orders) {
           const t = o.target;
           if (Math.max(c.x, t.x) < vx0 || Math.min(c.x, t.x) > vx1 || Math.max(c.y, t.y) < vy0 || Math.min(c.y, t.y) > vy1) continue;
-          ctx.moveTo(c.x, c.y); ctx.lineTo(t.x, t.y); nl++;
+          pairs.push([c, t]);
         }
       }
+      const path = new Path2D();
+      const nl = pairs.length > 20 ? addGroupedLines(path, pairs) : pairs.reduce((n, [a, t]) => (path.moveTo(a.x, a.y), path.lineTo(t.x, t.y), n + 1), 0);
       if (nl) {
         ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(96,165,250,' + (nl > 60 ? .22 : .45) + ')';
         if (nl <= 60) ctx.setLineDash([3, 7]);            // пунктир дорогой: при множестве линий рисуем сплошные бледные
-        ctx.stroke(); ctx.setLineDash([]);
+        ctx.stroke(path); ctx.setLineDash([]);
       }
     }
 
@@ -1460,13 +1480,14 @@
       const tl = [...tgts];
       if (hover && !tl.includes(hover) && !sel.has(hover)) tl.push(hover);
       if (!tl.length) tl.push(pointer);
-      for (const s of sel) for (const t of tl) {
-        if (t === s) continue;
-        ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(t.x, t.y); ctx.stroke();
-      }
-      if (hover === undefined || !hover) {
-        for (const s of sel) { ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(pointer.x, pointer.y); ctx.stroke(); }
-      }
+      const pairs = [];
+      for (const s of sel) for (const t of tl) if (t !== s) pairs.push([s, t]);
+      if (!hover) for (const s of sel) pairs.push([s, pointer]);
+      const path = new Path2D();
+      addGroupedLines(path, sel.size > 8 ? pairs : []);     // много источников: одна линия на группу соседних клеток
+      if (sel.size <= 8) for (const [a, t] of pairs) { path.moveTo(a.x, a.y); path.lineTo(t.x, t.y); }
+      else { ctx.setLineDash([]); ctx.strokeStyle = 'rgba(120,185,255,.6)'; }   // много источников: сплошные линии (пунктир на длинных линиях дорогой)
+      ctx.stroke(path);
       ctx.setLineDash([]);
     }
 
@@ -1515,6 +1536,19 @@
   }
 
   let selRings = null;
+  // линии от многих клеток к одной цели объединяем: клетки в одной ячейке 400 px дают одну линию из их центра
+  function addGroupedLines(path, pairs) {
+    const G = 400, groups = new Map();
+    for (const [a, t] of pairs) {
+      const key = Math.floor(a.x / G) * 100000 + Math.floor(a.y / G) * 10 + (t.__lid || (t.__lid = ++lineIds)) * 1e9;
+      let g = groups.get(key); if (!g) groups.set(key, g = { x: 0, y: 0, n: 0, t });
+      g.x += a.x; g.y += a.y; g.n++;
+    }
+    let n = 0;
+    for (const g of groups.values()) { path.moveTo(g.x / g.n, g.y / g.n); path.lineTo(g.t.x, g.t.y); n++; }
+    return n;
+  }
+  let lineIds = 0;
   function drawCell(c, now) {
     const { x, y, r } = c;
     const pulse = c.owner ? 0.75 + 0.25 * Math.sin(now * 2 + c.id) : 1;
