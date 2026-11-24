@@ -9,7 +9,7 @@
   * { box-sizing:border-box; }
   html,body { margin:0; height:100%; background:var(--bg); color:var(--text);
     font-family:"Segoe UI",system-ui,-apple-system,Roboto,sans-serif; overflow:hidden; user-select:none; -webkit-user-select:none; }
-  canvas#c { position:fixed; left:0; top:0; width:100%; height:calc(100% - var(--barH,80px)); touch-action:none; display:block; }
+  canvas#c, canvas#bg { position:fixed; left:0; top:0; width:100%; height:calc(100% - var(--barH,80px)); touch-action:none; display:block; }
   .pill { position:fixed; background:var(--panel); border:1.5px solid var(--line); border-radius:22px;
     box-shadow:0 0 18px rgba(40,90,220,.25), inset 0 0 14px rgba(60,110,255,.10); }
   #bar { position:fixed; left:0; right:0; bottom:0; height:var(--barH,80px); display:flex; align-items:center; justify-content:space-between; gap:16px;
@@ -77,6 +77,7 @@
 </style>
 </head>
 <body>
+<canvas id="bg" style="pointer-events:none"></canvas>
 <canvas id="c"></canvas>
 
 <div id="pause" class="pill">⏸ ПАУЗА — P, чтобы продолжить</div>
@@ -321,21 +322,36 @@
     for (const c of cells) if (c.flash > 0) c.flash = Math.max(0, c.flash - dt * 2.8);
   }
 
+  // эффекты рисуются пачками: частицы и кольца одного цвета и близкой прозрачности — одной командой
   function drawFx() {
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
+    const P = new Map(), Rg = new Map();
     for (const e of fx) {
       if (e.t < 0 || !inView(e.x, e.y, 120)) continue;
-      const k = e.t / e.life, a = 1 - k;
+      const k = e.t / e.life, a = 1 - k, q = Math.max(1, Math.round(a * 5));   // 5 уровней прозрачности
       if (e.k === 'p') {
-        ctx.fillStyle = 'rgba(' + e.col + ',' + (a * .95) + ')';
-        ctx.beginPath(); ctx.arc(e.x, e.y, e.r * (1 - k * .5), 0, Math.PI * 2); ctx.fill();
+        const key = e.col + '|' + q; let l = P.get(key); if (!l) P.set(key, l = []);
+        l.push(e.x, e.y, e.r * (1 - k * .5));
       } else {
-        const r = e.r0 + (e.r1 - e.r0) * (1 - Math.pow(1 - k, 2));
-        ctx.lineWidth = e.k === 'wave' ? 4 * a + 1 : 2.5 * a + .6;
-        ctx.strokeStyle = 'rgba(' + e.col + ',' + (a * (e.k === 'wave' ? .8 : 1)) + ')';
-        ctx.beginPath(); ctx.arc(e.x, e.y, r, 0, Math.PI * 2); ctx.stroke();
+        const key = e.col + '|' + q + '|' + (e.k === 'wave' ? 1 : 0); let l = Rg.get(key); if (!l) Rg.set(key, l = []);
+        l.push(e.x, e.y, e.r0 + (e.r1 - e.r0) * (1 - Math.pow(1 - k, 2)));
       }
+    }
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const [key, l] of P) {
+      const [col, q] = key.split('|');
+      ctx.fillStyle = 'rgba(' + col + ',' + (q / 5 * .95) + ')';
+      ctx.beginPath();
+      for (let i = 0; i < l.length; i += 3) { const r = l[i + 2]; ctx.rect(l[i] - r, l[i + 1] - r, r * 2, r * 2); }   // мелкие частицы квадратиками: заметно дешевле кругов
+      ctx.fill();
+    }
+    for (const [key, l] of Rg) {
+      const [col, q, wave] = key.split('|'), a = q / 5;
+      ctx.lineWidth = wave === '1' ? 4 * a + 1 : 2.5 * a + .6;
+      ctx.strokeStyle = 'rgba(' + col + ',' + (a * (wave === '1' ? .8 : 1)) + ')';
+      ctx.beginPath();
+      for (let i = 0; i < l.length; i += 3) { ctx.moveTo(l[i] + l[i + 2], l[i + 1]); ctx.arc(l[i], l[i + 1], l[i + 2], 0, 6.2832); }
+      ctx.stroke();
     }
     ctx.restore();
   }
@@ -400,7 +416,7 @@
 
   let VH = innerHeight;               // высота игрового поля: весь экран за вычетом нижней панели (~10%)
   function resize() {
-    dpr = window.devicePixelRatio || 1;
+    dpr = Math.min(1.5, window.devicePixelRatio || 1);   // на экранах высокой плотности не рисуем в 2–3x: пикселей в 2–4 раза меньше, а разница почти не видна
     const barH = Math.max(80, Math.round(innerHeight * .1));
     document.documentElement.style.setProperty('--barH', barH + 'px');
     VH = innerHeight - barH;
@@ -411,7 +427,7 @@
     zoom = clampZ(zoom); clampCam();
   }
   // фон: космос, туманности, звёзды (рисуется один раз на размер окна)
-  let bgCanvas = document.createElement('canvas'), stars = [];
+  let bgCanvas = $('bg'), stars = [];           // фон — отдельный слой под игровым полем: браузер не перерисовывает его каждый кадр
   function buildBg() {
     const w = bgCanvas.width = canvas.width, h = bgCanvas.height = canvas.height;
     const g = bgCanvas.getContext('2d');
@@ -544,7 +560,7 @@
       zoom = clampZ(innerWidth / 1300);
       const me = cells.find(c => c.owner === 1); centerOn(me.x + 250, me.y - 100);
     } else { zoom = minZoom; clampCam(); }          // на обычной карте видно всё поле целиком
-    botTimer = {}; botMoveTimer = {};
+    botTimer = {}; botMoveTimer = {}; for (const k in botQueue) delete botQueue[k];
     BOTS.forEach((B, i) => { botTimer[B] = 1.5 + i * .45; botMoveTimer[B] = 4 + i * 1.3; });
     state = 'play';
     overlay.classList.add('hidden');
@@ -681,11 +697,15 @@
     gameT += dt;
     for (const c of cells) if (c.owner) c.units += dt * rate(c);
     if (dynMode) {                                   // клетка раздувается от единиц и сдувается, когда они уходят
+      // сетка соседей: на рост влияют только клетки ближе 132 px (дальше места заведомо хватает на максимальный радиус 64)
+      const DG = 140, dgw = Math.ceil(W / DG) + 1, dgrid = new Map();
+      for (const c of cells) { const k = Math.floor(c.x / DG) * 1000 + Math.floor(c.y / DG); let l = dgrid.get(k); if (!l) dgrid.set(k, l = []); l.push(c); }
       for (const c of cells) {
         // растём только до соседей: клетки не налезают друг на друга
         let room = Infinity;
         const Rc = radiusDyn(dynTarget(c));
-        for (const o of cells) {
+        const gx = Math.floor(c.x / DG), gy = Math.floor(c.y / DG);
+        for (let ix = gx - 1; ix <= gx + 1; ix++) for (let iy = gy - 1; iy <= gy + 1; iy++) for (const o of dgrid.get(ix * 1000 + iy) || []) {
           if (o === c) continue;
           const d = dist(c, o);
           // место между двумя клетками делится пропорционально желаемым размерам: у кого единиц больше, та и крупнее
@@ -789,9 +809,12 @@
 
     if (state === 'play' && balanceOn && (balT -= dt) <= 0) { balT = .25; balanceStep(); }
     if (state === 'play') {
-      for (const B of BOTS) {
+      botBudgetT = performance.now();
+      const order = BOTS.slice(); for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }   // очерёдность ботов меняется, чтобы бюджет доставался всем
+      for (const B of order) {
         botTimer[B] -= dt;
         if (botTimer[B] <= 0) { botTimer[B] = DIFF[diff].interval * (0.8 + Math.random() * 0.4); botStep(B); }
+        botRun(B);
         botMoveTimer[B] -= dt;
         if (botMoveTimer[B] <= 0) { botMoveTimer[B] = DIFF[diff].moveEvery * (0.7 + Math.random() * 0.6); botMove(B); }
       }
@@ -896,8 +919,18 @@
   // за один ход бот делает несколько действий: чем больше у него клеток, тем больше (на большой карте иначе он не успевает за игроком)
   function botStep(B) {
     const n = Math.min(14, 1 + Math.floor(cells.reduce((a, c) => a + (c.owner === B ? 1 : 0), 0) * DIFF[diff].actK));
-    const memo = {};
-    for (let i = 0; i < n; i++) if (!botAct(B, memo)) break;
+    botQueue[B] = { n, memo: {} };                    // действия хода выполняются по кадрам (botRun), чтобы не было рывков
+  }
+  const botQueue = {};
+  const BG = 260;                                       // ячейка сетки поиска своих клеток для ботов
+  let botBudgetT = 0;                                   // общий бюджет на думание всех ботов за кадр: ~4 мс
+  function botRun(B) {
+    const q = botQueue[B];
+    if (!q || q.n <= 0) return;
+    if (performance.now() - botBudgetT > 4) return;     // бюджет кадра исчерпан: продолжим в следующем
+    q.n--;                                              // хотя бы одно действие за кадр, остальные — пока есть время
+    if (!botAct(B, q.memo)) { q.n = 0; return; }
+    while (q.n > 0 && performance.now() - botBudgetT < 4) { q.n--; if (!botAct(B, q.memo)) { q.n = 0; break; } }
   }
 
   function botAct(B, memo) {
@@ -938,9 +971,29 @@
     const cap = myCells.length <= 1 ? total : cfg.spend * total;   // в начале игры можно тратить всё на рост
     const options = [], str = {};
     // рассматриваем только ближайшие к нам клетки (на большой карте иначе перебор слишком долгий)
+    // сетка своих клеток: ближайшие свои клетки ищем по соседним ячейкам, а не перебором всех
+    if (!memo.grid) {
+      const g = memo.grid = new Map();
+      for (const c of myCells) { const k = Math.floor(c.x / BG) * 1000 + Math.floor(c.y / BG); let l = g.get(k); if (!l) g.set(k, l = []); l.push(c); }
+    }
+    const mineSet = new Set(mine);
+    const nearOwn = (t, k) => {                           // k ближайших своих клеток, из которых можно стрелять
+      if (mine.length < 40) return mine.map(m => ({ m, d: dist(m, t) })).sort((a, b) => a.d - b.d).slice(0, k);   // клеток мало: проще перебрать
+      const gx = Math.floor(t.x / BG), gy = Math.floor(t.y / BG), found = [];
+      let extra = -1;
+      for (let R = 0; R < 40; R++) {
+        for (let ix = gx - R; ix <= gx + R; ix++) for (let iy = gy - R; iy <= gy + R; iy++) {
+          if (Math.max(Math.abs(ix - gx), Math.abs(iy - gy)) !== R) continue;
+          for (const c of memo.grid.get(ix * 1000 + iy) || []) if (mineSet.has(c)) found.push(c);
+        }
+        if (extra < 0 && found.length >= k) extra = R + 1;   // ещё одно кольцо: в нём могут быть клетки ближе по прямой
+        if (extra >= 0 && R >= extra) break;
+      }
+      return found.map(m => ({ m, d: dist(m, t) })).sort((a, b) => a.d - b.d).slice(0, k);
+    };
     if (!memo.cand) {                                     // список целей считаем один раз за ход бота, а не перед каждым действием
       const byD = cells.filter(t => t.owner !== B)
-        .map(t => ({ t, d: mine.reduce((m, c) => Math.min(m, dist(c, t)), Infinity) }))
+        .map(t => { const n = nearOwn(t, 1); return { t, d: n.length ? n[0].d : Infinity }; })
         .sort((a, b) => a.d - b.d);
       memo.cand = byD.slice(0, 30).map(x => x.t);
       for (const x of byD.filter(x => x.t.bonus).slice(0, 10)) if (!memo.cand.includes(x.t)) memo.cand.push(x.t);   // ближайшие бонусные клетки бот рассматривает, даже если они далеко
@@ -952,7 +1005,7 @@
       // нейтральную клетку, которую уже атакует кто-то другой, не трогаем: иначе мы лишь ослабим её для третьего
       if (t.owner === 0 && hostileIn(t, B) > 0) continue;
       // стрелять можно только из клеток, у которых путь к цели не перекрыт другой клеткой
-      const near12 = mine.map(m => ({ m, d: dist(m, t) })).sort((a, b) => a.d - b.d).slice(0, 12).map(x => x.m);
+      const near12 = nearOwn(t, 12).map(x => x.m);
       const sorted = [];
       for (const m of near12) { if (!pathBlocker(m, t)) sorted.push(m); if (sorted.length >= 6) break; }   // ближайшие клетки, у которых свободен путь
       if (!sorted.length) continue;
@@ -1254,17 +1307,26 @@
   function draw() {
     const now = performance.now() / 1000;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.drawImage(bgCanvas, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);   // игровой слой прозрачный, фон виден из-под него
     // мигающие звёзды: у каждой своя скорость и фаза, яркие слегка «лучатся»
-    for (const st of stars) {
-      const k = 0.5 + 0.5 * Math.sin(now * st.s + st.p);
-      const a = st.a * (0.06 + 0.94 * k * k);
-      ctx.fillStyle = 'rgba(' + st.rgb + ',' + a + ')';
-      ctx.beginPath(); ctx.arc(st.x, st.y, st.r * (0.7 + 0.5 * k), 0, Math.PI * 2); ctx.fill();
-      if (st.r > 1.7 * dpr && k > .7) {
-        const l = st.r * 4.5 * k;
-        ctx.strokeStyle = 'rgba(' + st.rgb + ',' + a * .5 + ')'; ctx.lineWidth = Math.max(1, dpr * .6);
-        ctx.beginPath(); ctx.moveTo(st.x - l, st.y); ctx.lineTo(st.x + l, st.y); ctx.moveTo(st.x, st.y - l); ctx.lineTo(st.x, st.y + l); ctx.stroke();
+    {                                                    // звёзды пачками: 6 уровней яркости — 6 заливок и 6 обводок лучей на весь экран
+      const SL = 6, dots = [], rays = [];
+      for (let i = 0; i < SL; i++) { dots.push(new Path2D()); rays.push(new Path2D()); }
+      for (const st of stars) {
+        const k = 0.5 + 0.5 * Math.sin(now * st.s + st.p);
+        const a = st.a * (0.06 + 0.94 * k * k), q = Math.min(SL - 1, Math.floor(a * SL));
+        const r = st.r * (0.7 + 0.5 * k);
+        dots[q].moveTo(st.x + r, st.y); dots[q].arc(st.x, st.y, r, 0, 6.2832);
+        if (st.r > 1.7 * dpr && k > .7) {
+          const l = st.r * 4.5 * k;
+          rays[q].moveTo(st.x - l, st.y); rays[q].lineTo(st.x + l, st.y); rays[q].moveTo(st.x, st.y - l); rays[q].lineTo(st.x, st.y + l);
+        }
+      }
+      ctx.lineWidth = Math.max(1, dpr * .6);
+      for (let q = 0; q < SL; q++) {
+        const a = (q + .5) / SL;
+        ctx.fillStyle = 'rgba(215,228,255,' + a + ')'; ctx.fill(dots[q]);
+        ctx.strokeStyle = 'rgba(215,228,255,' + a * .5 + ')'; ctx.stroke(rays[q]);
       }
     }
     ctx.setTransform(dpr * zoom, 0, 0, dpr * zoom, -dpr * zoom * cam.x, -dpr * zoom * cam.y);
@@ -1289,15 +1351,12 @@
     }
 
     // запланированные отправки (ещё не вылетевшие единицы)
+    ctx.beginPath();                                     // все линии очередей — одной обводкой
     for (const c of cells) {
       if (c.owner !== 1) continue;
-      for (const o of c.orders) {
-        ctx.lineWidth = 1.5; ctx.setLineDash([3, 7]);
-        ctx.strokeStyle = 'rgba(96,165,250,.45)';
-        ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(o.target.x, o.target.y); ctx.stroke();
-        ctx.setLineDash([]);
-      }
+      for (const o of c.orders) { ctx.moveTo(c.x, c.y); ctx.lineTo(o.target.x, o.target.y); }
     }
+    ctx.lineWidth = 1.5; ctx.setLineDash([3, 7]); ctx.strokeStyle = 'rgba(96,165,250,.45)'; ctx.stroke(); ctx.setLineDash([]);
 
     // рамка выделения
     if (box) {
@@ -1331,7 +1390,7 @@
     // летящие единицы: все единицы одного цвета выводятся разом (один путь и одна заливка), число единиц почти не влияет на скорость
     {
       const vx0 = cam.x - 30, vy0 = cam.y - 30, vx1 = cam.x + innerWidth / zoom + 30, vy1 = cam.y + VH / zoom + 30;
-      const fancy = squads.length < 1500;
+      const fancy = squads.length < 600;                // при большом числе единиц — простые квадраты без хвостов и свечения
       for (let o = 1; o <= BOTS.length + 1; o++) {
         const col = UCOL[o], core = UCORE[o];
         let any = false;
@@ -1397,11 +1456,10 @@
 
     if (c.bonus) {                                                  // золотое кольцо и молния
       const k = 0.5 + 0.5 * Math.sin(now * 4);
-      ctx.save();
       const B = BONUS[c.bonus];
-      ctx.strokeStyle = 'rgba(' + B.rgb + ',' + (.65 + .35 * k) + ')'; ctx.lineWidth = 4; ctx.shadowColor = B.col; ctx.shadowBlur = 14;
-      ctx.beginPath(); ctx.arc(x, y, r + 5 + 3 * k, 0, Math.PI * 2); ctx.stroke();
-      ctx.restore();
+      ctx.beginPath(); ctx.arc(x, y, r + 5 + 3 * k, 0, Math.PI * 2);   // без shadowBlur (размытие очень дорогое): свечение — широкой полупрозрачной обводкой
+      ctx.strokeStyle = 'rgba(' + B.rgb + ',.25)'; ctx.lineWidth = 12; ctx.stroke();
+      ctx.strokeStyle = 'rgba(' + B.rgb + ',' + (.65 + .35 * k) + ')'; ctx.lineWidth = 4; ctx.stroke();
       ctx.font = '700 ' + Math.round(Math.max(14, r * .7)) + 'px sans-serif';
       ctx.fillStyle = B.col; ctx.fillText(B.glyph, x, y - r - 12 - 3 * k);
     }
@@ -1425,7 +1483,7 @@
     const key = c.owner * 100000 + Math.round(c.r * 10);   // радиус в ключе: режимы клеток дают разный радиус при одном размере
     let e = spriteCache.get(key);
     if (e) return e;
-    const r = c.r, pad = 40, S = (r + pad) * 2, k = dpr * zb;
+    const r = c.r, pad = 28, S = (r + pad) * 2, k = dpr * zb;   // запас под свечение: меньше — дешевле рисовать
     const cv = document.createElement('canvas');
     cv.width = cv.height = Math.ceil(S * k);
     const g = cv.getContext('2d'); g.scale(k, k);
@@ -1462,11 +1520,14 @@
     const w = m.width, h = m.height;
     g.clearRect(0, 0, w, h);
     const sx = (w - 24) / W, sy = (h - 24) / H;
+    const byCol = new Map();                             // клетки одного цвета — одной заливкой
     for (const c of cells) {
       const col = c.bonus ? BONUS[c.bonus].col : MCOL[c.owner] || 'rgba(205,220,255,.75)';
-      g.fillStyle = col;
-      g.beginPath(); g.arc(12 + c.x * sx, 12 + c.y * sy, 1.6 + c.size / 22, 0, Math.PI * 2); g.fill();
+      let p = byCol.get(col); if (!p) byCol.set(col, p = new Path2D());
+      const x = 12 + c.x * sx, y = 12 + c.y * sy, r = 1.6 + c.size / 22;
+      p.moveTo(x + r, y); p.arc(x, y, r, 0, 6.2832);
     }
+    for (const [col, p] of byCol) { g.fillStyle = col; g.fill(p); }
     for (let o = 1; o <= BOTS.length + 1; o++) {
       g.beginPath();
       for (const u of squads) if (u.owner === o) g.rect(12 + u.x * sx - 1, 12 + u.y * sy - 1, 2, 2);
