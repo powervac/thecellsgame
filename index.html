@@ -1324,7 +1324,14 @@
       } else if (!c) {                           // одиночный тап по пустому месту — переместить выбранные
         if (moveSel.size) { if (info && info.touch) moveTo(pointer); else moveSel = new Set(); }   // мышь: тап по пустому снимает выделение; палец: летят туда
         lastTap = null;
-      } else lastTap = null;
+      } else {                                   // клик по чужой или нейтральной клетке при выделенных своих — атака из всех выделенных
+        const src = [...moveSel].filter(m => m.owner === 1);
+        if (src.length) {
+          for (const m of src) sendMulti(m, [c], 1);
+          fx.push({ k: 'ring', x: c.x, y: c.y, col: '251,191,36', t: 0, life: .4, r0: c.r, r1: c.r + 18 });
+        }
+        lastTap = null;
+      }
       dragging = false; sel = new Set(); tgts = [];
       return;
     }
@@ -1439,7 +1446,7 @@
         const pts = [c.dest, ...(c.path || [])];
         let px = c.x, py = c.y;
         for (const q of pts) {
-          if (moveSel.size > 20 && px === c.x) { routePairs.push([c, q]); px = q.x; py = q.y; }    // много клеток: первый отрезок рисуем группами
+          if (moveSel.size > MANY && px === c.x) { routePairs.push([c, q]); px = q.x; py = q.y; }    // много клеток: первый отрезок рисуем группами
           else if (inView((px + q.x) / 2, (py + q.y) / 2, Math.hypot(q.x - px, q.y - py) / 2 + 20)) { lines.moveTo(px, py); lines.lineTo(q.x, q.y); nl++; }
           px = q.x; py = q.y;
           const key = Math.round(q.x) + ',' + Math.round(q.y);     // общая точка группы рисуется один раз
@@ -1451,8 +1458,8 @@
       }
       if (routePairs.length) nl += addGroupedLines(lines, routePairs);
       if (nl) {
-        ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(241,245,249,' + (nl > 40 ? .25 : .55) + ')';
-        if (nl <= 40) ctx.setLineDash([2, 8]);            // пунктир дорогой: при множестве маршрутов — сплошные бледные
+        ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(241,245,249,' + (nl > MANY ? .25 : .55) + ')';
+        if (nl <= MANY) ctx.setLineDash([2, 8]);            // пунктир дорогой: при множестве маршрутов — сплошные бледные
         ctx.stroke(lines); ctx.setLineDash([]);
       }
       ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(241,245,249,.9)'; ctx.stroke(marks);
@@ -1471,10 +1478,10 @@
         }
       }
       const path = new Path2D();
-      const nl = pairs.length > 20 ? addGroupedLines(path, pairs) : pairs.reduce((n, [a, t]) => (path.moveTo(a.x, a.y), path.lineTo(t.x, t.y), n + 1), 0);
+      const nl = pairs.length > MANY ? addGroupedLines(path, pairs) : pairs.reduce((n, [a, t]) => (path.moveTo(a.x, a.y), path.lineTo(t.x, t.y), n + 1), 0);
       if (nl) {
-        ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(96,165,250,' + (nl > 60 ? .22 : .45) + ')';
-        if (nl <= 60) ctx.setLineDash([3, 7]);            // пунктир дорогой: при множестве линий рисуем сплошные бледные
+        ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(96,165,250,' + (nl > MANY ? .22 : .45) + ')';
+        if (nl <= MANY) ctx.setLineDash([3, 7]);            // пунктир дорогой: при множестве линий рисуем сплошные бледные
         ctx.stroke(path); ctx.setLineDash([]);
       }
     }
@@ -1498,8 +1505,8 @@
       for (const s of sel) for (const t of tl) if (t !== s) pairs.push([s, t]);
       if (!hover) for (const s of sel) pairs.push([s, pointer]);
       const path = new Path2D();
-      addGroupedLines(path, sel.size > 8 ? pairs : []);     // много источников: одна линия на группу соседних клеток
-      if (sel.size <= 8) for (const [a, t] of pairs) { path.moveTo(a.x, a.y); path.lineTo(t.x, t.y); }
+      addGroupedLines(path, sel.size > MANY ? pairs : []);  // очень много источников: одна линия на группу соседних клеток
+      if (sel.size <= MANY) for (const [a, t] of pairs) { path.moveTo(a.x, a.y); path.lineTo(t.x, t.y); }
       else { ctx.setLineDash([]); ctx.strokeStyle = 'rgba(120,185,255,.6)'; }   // много источников: сплошные линии (пунктир на длинных линиях дорогой)
       ctx.stroke(path);
       ctx.setLineDash([]);
@@ -1513,7 +1520,7 @@
       if (col[0] === 'b') { ctx.lineWidth = 6 / zoom; ctx.strokeStyle = BONUS[col.slice(1)].col; ctx.stroke(p); }   // бонусы издалека — цветное кольцо
       else { ctx.fillStyle = col; ctx.fill(p); }
     }
-    const fewSel = moveSel.size <= 60 && zoom > .35;       // пунктир дорогой: при множестве колец или издалека — сплошные бледные
+    const fewSel = moveSel.size <= MANY && zoom > .35;       // пунктир дорогой: при множестве колец или издалека — сплошные бледные
     if (fewSel) ctx.setLineDash([5, 5]);
     ctx.lineWidth = fewSel ? 2 : Math.max(2, 1.5 / zoom); ctx.strokeStyle = fewSel ? '#f1f5f9' : 'rgba(241,245,249,.55)'; ctx.stroke(selRings); ctx.setLineDash([]);
 
@@ -1556,6 +1563,7 @@
   }
 
   let selRings = null, lodPaths = new Map();
+  const MANY = 150;                                     // упрощать линии и кольца (группы, без пунктира) — только когда их реально очень много
   // линии от многих клеток к одной цели объединяем: клетки в одной ячейке 400 px дают одну линию из их центра
   function addGroupedLines(path, pairs) {
     const G = 400, groups = new Map();
