@@ -599,8 +599,9 @@
 
   function arrive(u) {
     const c = u.target;
-    if (c.owner === u.owner) { c.units += 1; hitFx(u, c, 'join'); }
-    else if (c.units >= 1) { c.units -= 1; hitFx(u, c, 'hit'); }
+    const n = u.n || 1;
+    if (c.owner === u.owner) { c.units += n; hitFx(u, c, 'join'); }
+    else if (c.units >= n) { c.units -= n; hitFx(u, c, 'hit'); }   // чтобы взять клетку, нужно строго больше единиц, чем в ней
     else {
       if (c.bonus) {                                              // бонусная клетка: захватчик получает ускорение на 60 секунд
         { const T = { fly: boostFly, prod: boostProd, move: boost }[c.bonus]; if (T[u.owner] !== Infinity) T[u.owner] = gameT + BOOST_TIME; }   // бессрочный тестовый бонус не перезаписываем
@@ -608,7 +609,7 @@
         c.bonus = false;
       }
       if (c.owner === 1 && balanceOn) c.recap = gameT + 10;      // враг отбил клетку у выравнивания: 10 секунд считаем её своей и пытаемся вернуть
-      c.units = 1 - c.units; c.owner = u.owner; c.orders = []; c.acc = 0;
+      c.units = n - c.units; c.owner = u.owner; c.orders = []; c.acc = 0;
       hitFx(u, c, 'capture');
     }
   }
@@ -620,8 +621,20 @@
     c.stuck = 0;
   }
 
+  // сетка клеток для движения: соседей ищем в 3x3 ячейках вокруг, а не по всей карте
+  const MG = 200;
+  let moveGrid = null;
+  function nearCells(c) {
+    if (!moveGrid) {
+      moveGrid = new Map();
+      for (const o of cells) { const k = Math.floor(o.x / MG) * 10000 + Math.floor(o.y / MG); let l = moveGrid.get(k); if (!l) moveGrid.set(k, l = []); l.push(o); }
+    }
+    const gx = Math.floor(c.x / MG), gy = Math.floor(c.y / MG), out = [];
+    for (let ix = gx - 1; ix <= gx + 1; ix++) for (let iy = gy - 1; iy <= gy + 1; iy++) { const l = moveGrid.get(ix * 10000 + iy); if (l) for (const o of l) out.push(o); }
+    return out;
+  }
   function separate(c, depth, from) {
-    for (const o of cells) {
+    for (const o of nearCells(c)) {
       if (o === c || o === from) continue;
       const ox = c.x - o.x, oy = c.y - o.y, od = Math.hypot(ox, oy) || 1;
       const min = c.r + o.r + 4, pen = min - od;
@@ -644,7 +657,7 @@
     if (d < 3) { nextWp(c); return; }
     // группа летит в одну точку: клетки не могут встать в неё все, поэтому считаем, что дошли, когда упёрлись в соседа с той же целью
     if (d < c.r + 60) {
-      for (const o of cells) {
+      for (const o of nearCells(c)) {
         if (o === c || !o.owner || o.owner !== c.owner) continue;
         const od = Math.hypot(o.x - c.x, o.y - c.y);
         if (od > c.r + o.r + 50) continue;
@@ -659,7 +672,8 @@
     let wx = dx * sp * near, wy = dy * sp * near;
     // объезд: отталкивание + боковое смещение вокруг препятствия
     const M = 45;
-    for (const o of cells) {
+    const nb = nearCells(c);
+    for (const o of nb) {
       if (o === c) continue;
       let ox = c.x - o.x, oy = c.y - o.y;
       const od = Math.hypot(ox, oy) || 1;
@@ -683,7 +697,7 @@
     c.x += c.vx * dt; c.y += c.vy * dt;
     // клетки не налезают друг на друга и расталкивают друг друга: чем крупнее клетка, тем легче она сдвигает соседей и тем труднее сдвинуть её саму
     separate(c, 0);
-    for (const o of cells) {                                  // страховка: если соседа сдвинуть некуда (край карты, цепочка), мы отступаем полностью
+    for (const o of nb) {                                     // страховка: если соседа сдвинуть некуда (край карты, цепочка), мы отступаем полностью
       if (o === c) continue;
       const ox = c.x - o.x, oy = c.y - o.y, od = Math.hypot(ox, oy) || 1;
       const min = c.r + o.r + 4;
@@ -726,6 +740,7 @@
     updateFx(dt);
 
     // движение клеток: плавный облёт других клеток
+    moveGrid = null;
     for (const c of cells) {
       if (c.owner !== 1) moveSel.delete(c);
       else if (selAllSet && moveSel === selAllSet) moveSel.add(c);
@@ -738,15 +753,20 @@
     for (const c of cells) {
       if (!c.orders.length) { c.acc = 0; continue; }
       const bm = balanceOn && c.owner === 1 && c.orders.every(o => o.target.owner === 1 || o.target.recap > gameT) ? 9 * Math.min(50, Math.max(1, c.units / (balK * c.size))) : 1;   // в режиме выравнивания обмен между своими клетками в 9 раз быстрее обычной высылки
-      c.acc = Math.min(c.acc + dt * launchRate(c) * bm, 150);
-      while (c.acc >= 1 && c.orders.length) {
-        if (c.units < 1) break;
+      c.acc = Math.min(c.acc + dt * launchRate(c) * bm, 3000);
+      c.lt = (c.lt || 0) + dt;
+      if (c.acc < 1 || c.lt < Math.max(.05, squads.length / 1500)) continue;   // при множестве точек в полёте пачки реже и крупнее — единиц столько же              // пачка не чаще 20 раз в секунду: при быстром выпуске одна точка несёт много единиц
+      c.lt = 0;
+      let k = Math.min(Math.floor(c.acc), Math.floor(c.units));
+      const per = Math.max(1, Math.ceil(k / c.orders.length));
+      while (k >= 1 && c.orders.length) {
         c.rr = (c.rr || 0) % c.orders.length;
         const o = c.orders[c.rr];
+        const take = Math.min(per, k, Math.floor(o.remaining) || 1);
         const d = dist(c, o.target) || 1;
-        squads.push({ owner: c.owner, target: o.target, src: c, left: false, fast: bm > 1,
+        squads.push({ owner: c.owner, target: o.target, src: c, left: false, fast: bm > 1, n: take,
           x: c.x + (o.target.x - c.x) / d * c.r, y: c.y + (o.target.y - c.y) / d * c.r });
-        c.units -= 1; c.acc -= 1; o.remaining--;
+        c.units -= take; c.acc -= take; k -= take; o.remaining -= take;
         if (o.remaining <= 0) c.orders.splice(c.rr, 1); else c.rr++;
       }
     }
@@ -801,7 +821,10 @@
           if (v.dead || v.owner === u.owner) continue;
           const ex = u.x - v.x, ey = u.y - v.y;
           if (ex * ex + ey * ey < G2) {
-            u.dead = v.dead = true;
+            const m = Math.min(u.n, v.n);                   // пачки гасят друг друга один к одному
+            u.n -= m; v.n -= m;
+            if (u.n <= 0) u.dead = true;
+            if (v.n <= 0) v.dead = true;
             if (fx.length < 250) burst((u.x + v.x) / 2, (u.y + v.y) / 2, Math.random() * 6.28, 6.28, 3, '255,255,255', 70, .35);
             break outer;
           }
@@ -841,8 +864,14 @@
     const need = own.filter(c => fut.get(c) < goal(c) - 1);
     for (const c of cells) if (c.owner > 1 && c.recap > gameT) need.push(c);   // недавно потерянные клетки: ещё 10 секунд посылаем туда единицы, чтобы вернуть
     for (const d of give) {
-      need.sort((a, b) => dist(a, d) - dist(b, d));
+      if (fut.get(d) <= goal(d) + 1 && !need.some(r => r.owner !== 1)) break;   // дальше доноров нет (список отсортирован по излишку)
+      const near = [];                                    // 6 ближайших получателей
       for (const r of need) {
+        const dd = dist(r, d);
+        if (near.length < 6) { near.push([dd, r]); near.sort((a, b) => a[0] - b[0]); }
+        else if (dd < near[5][0]) { near[5] = [dd, r]; near.sort((a, b) => a[0] - b[0]); }
+      }
+      for (const [, r] of near) {
         const lost = r.owner !== 1;
         const surplus = lost ? Math.min(avail(d), fut.get(d) * .5) : fut.get(d) > goal(d) + 1 ? Math.min(fut.get(d) - goal(d), avail(d)) : 0, want = lost ? r.units + 2 - incoming(r, 1) : goal(r) - fut.get(r);
         if (surplus < 1 || r === d) continue;
@@ -875,7 +904,7 @@
     if (!incCache) {
       incCache = { to: new Map(), own: new Array(8).fill(0) };
       const slot = t => { let a = incCache.to.get(t); if (!a) incCache.to.set(t, a = new Array(8).fill(0)); return a; };
-      for (const s of squads) { slot(s.target)[s.owner]++; incCache.own[s.owner]++; }
+      for (const s of squads) { slot(s.target)[s.owner] += s.n; incCache.own[s.owner] += s.n; }
       for (const c of cells) if (c.owner) for (const o of c.orders) slot(o.target)[c.owner] += o.remaining;   // ещё не вылетевшие единицы тоже считаются идущими
     }
     return incCache;
@@ -1371,29 +1400,50 @@
     ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(100,150,255,.38)'; ctx.strokeRect(0, 0, W, H);
 
     // цели перемещения и путь через несколько точек
-    for (const c of cells) {
-      if (!c.dest) continue;
-      const pts = [c.dest, ...(c.path || [])];
-      ctx.setLineDash([2, 8]); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(241,245,249,.55)';
-      ctx.beginPath(); ctx.moveTo(c.x, c.y);
-      for (const q of pts) ctx.lineTo(q.x, q.y);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.strokeStyle = 'rgba(241,245,249,.9)';
-      for (const q of pts) {
-        ctx.beginPath(); ctx.arc(q.x, q.y, 9, 0, Math.PI * 2); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(q.x - 5, q.y); ctx.lineTo(q.x + 5, q.y);
-        ctx.moveTo(q.x, q.y - 5); ctx.lineTo(q.x, q.y + 5); ctx.stroke();
+    {                                                    // маршруты своих клеток: одна обводка на линии и одна на метки точек
+      const lines = new Path2D(), marks = new Path2D(), seen = new Set();
+      let nl = 0;
+      for (const c of cells) {
+        if (!c.dest || c.owner !== 1) continue;
+        const pts = [c.dest, ...(c.path || [])];
+        let px = c.x, py = c.y;
+        for (const q of pts) {
+          if (inView((px + q.x) / 2, (py + q.y) / 2, Math.hypot(q.x - px, q.y - py) / 2 + 20)) { lines.moveTo(px, py); lines.lineTo(q.x, q.y); nl++; }
+          px = q.x; py = q.y;
+          const key = Math.round(q.x) + ',' + Math.round(q.y);     // общая точка группы рисуется один раз
+          if (seen.has(key) || !inView(q.x, q.y, 20)) continue;
+          seen.add(key);
+          marks.moveTo(q.x + 9, q.y); marks.arc(q.x, q.y, 9, 0, 6.2832);
+          marks.moveTo(q.x - 5, q.y); marks.lineTo(q.x + 5, q.y); marks.moveTo(q.x, q.y - 5); marks.lineTo(q.x, q.y + 5);
+        }
       }
+      if (nl) {
+        ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(241,245,249,' + (nl > 40 ? .25 : .55) + ')';
+        if (nl <= 40) ctx.setLineDash([2, 8]);            // пунктир дорогой: при множестве маршрутов — сплошные бледные
+        ctx.stroke(lines); ctx.setLineDash([]);
+      }
+      ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(241,245,249,.9)'; ctx.stroke(marks);
     }
 
     // запланированные отправки (ещё не вылетевшие единицы)
-    ctx.beginPath();                                     // все линии очередей — одной обводкой
-    for (const c of cells) {
-      if (c.owner !== 1) continue;
-      for (const o of c.orders) { ctx.moveTo(c.x, c.y); ctx.lineTo(o.target.x, o.target.y); }
+    {                                                    // все линии очередей — одной обводкой и только те, что видны на экране
+      const vx0 = cam.x, vy0 = cam.y, vx1 = cam.x + innerWidth / zoom, vy1 = cam.y + VH / zoom;
+      let nl = 0;
+      ctx.beginPath();
+      for (const c of cells) {
+        if (c.owner !== 1) continue;
+        for (const o of c.orders) {
+          const t = o.target;
+          if (Math.max(c.x, t.x) < vx0 || Math.min(c.x, t.x) > vx1 || Math.max(c.y, t.y) < vy0 || Math.min(c.y, t.y) > vy1) continue;
+          ctx.moveTo(c.x, c.y); ctx.lineTo(t.x, t.y); nl++;
+        }
+      }
+      if (nl) {
+        ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(96,165,250,' + (nl > 60 ? .22 : .45) + ')';
+        if (nl <= 60) ctx.setLineDash([3, 7]);            // пунктир дорогой: при множестве линий рисуем сплошные бледные
+        ctx.stroke(); ctx.setLineDash([]);
+      }
     }
-    ctx.lineWidth = 1.5; ctx.setLineDash([3, 7]); ctx.strokeStyle = 'rgba(96,165,250,.45)'; ctx.stroke(); ctx.setLineDash([]);
 
     // рамка выделения
     if (box) {
@@ -1422,7 +1472,9 @@
 
     // клетки
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    selRings = new Path2D();
     for (const c of cells) if (inView(c.x, c.y, c.r + 80)) drawCell(c, now);
+    ctx.setLineDash([5, 5]); ctx.lineWidth = 2; ctx.strokeStyle = '#f1f5f9'; ctx.stroke(selRings); ctx.setLineDash([]);
 
     // летящие единицы: все единицы одного цвета выводятся разом (один путь и одна заливка), число единиц почти не влияет на скорость
     {
@@ -1443,15 +1495,17 @@
           ctx.beginPath();
           for (const u of squads) {
             if (u.owner !== o || u.x < vx0 || u.x > vx1 || u.y < vy0 || u.y > vy1) continue;
-            ctx.moveTo(u.x + 8, u.y); ctx.arc(u.x, u.y, 8, 0, 6.2832);
+            const gr = 8 + (u.n > 1 ? Math.min(10, Math.log2(u.n) * 2) : 0);
+            ctx.moveTo(u.x + gr, u.y); ctx.arc(u.x, u.y, gr, 0, 6.2832);
           }
           ctx.fillStyle = 'rgba(' + col + ',.22)'; ctx.fill();
         }
         ctx.beginPath();
         for (const u of squads) {
           if (u.owner !== o || u.x < vx0 || u.x > vx1 || u.y < vy0 || u.y > vy1) continue;
-          if (fancy) { ctx.moveTo(u.x + 3.4, u.y); ctx.arc(u.x, u.y, 3.4, 0, 6.2832); }
-          else ctx.rect(u.x - 3, u.y - 3, 6, 6);
+          const ur = u.n > 1 ? 3.4 + Math.min(6, Math.log2(u.n) * 1.3) : 3.4;   // размер точки растёт с числом единиц в пачке
+          if (fancy) { ctx.moveTo(u.x + ur, u.y); ctx.arc(u.x, u.y, ur, 0, 6.2832); }
+          else ctx.rect(u.x - ur, u.y - ur, ur * 2, ur * 2);
         }
         ctx.fillStyle = fancy ? core : 'rgb(' + col + ')'; ctx.fill();
       }
@@ -1460,6 +1514,7 @@
     if (now - miniT > .12) { miniT = now; drawMini(); }
   }
 
+  let selRings = null;
   function drawCell(c, now) {
     const { x, y, r } = c;
     const pulse = c.owner ? 0.75 + 0.25 * Math.sin(now * 2 + c.id) : 1;
@@ -1486,7 +1541,7 @@
       ctx.beginPath(); ctx.arc(x, y, r + 7, 0, Math.PI * 2);
       ctx.setLineDash(dash || []); ctx.lineWidth = 2; ctx.strokeStyle = col; ctx.stroke(); ctx.setLineDash([]);
     };
-    if (moveSel.has(c)) ring('#f1f5f9', [5, 5]);
+    if (moveSel.has(c)) { selRings.moveTo(x + r + 7, y); selRings.arc(x, y, r + 7, 0, 6.2832); }   // кольца выделения копятся и рисуются одной обводкой
     if (tgts.includes(c)) ring('#fbbf24');
     if (sel.has(c)) ring('#93c5fd');
     if (dragging && c.owner !== 1 && cellAt(pointer) === c) ring('#fbbf24');
