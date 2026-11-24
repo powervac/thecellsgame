@@ -356,6 +356,7 @@
   let diff = 'medium';
   let botTimer = { 2: 0, 3: 0 }, botMoveTimer = { 2: 0, 3: 0 };
   const groups = {};                               // группы клеток по цифрам 0-9
+  let selAllSet = null;                // множество, созданное клавишей A: пока оно выбрано, захваченные клетки добавляются в него сами
   let moveSel = new Set(), lastTap = null, downInfo = null, box = null;
   let sel = new Set(), tgts = [], dragging = false, pointer = { x:0, y:0 };
   let last = 0;
@@ -498,7 +499,7 @@
     if (dynMode) for (const c of cells) { c.size = dynTarget(c); c.r = radiusDyn(Math.round(c.size)); }
     squads = []; fx = [];
     for (const k in groups) delete groups[k];
-    sel = new Set(); tgts = []; dragging = false; moveSel = new Set(); lastTap = null;
+    sel = new Set(); tgts = []; dragging = false; moveSel = new Set(); selAllSet = null; lastTap = null;
     if (mapMode === 'big') {
       zoom = clampZ(innerWidth / 1300);
       const me = cells.find(c => c.owner === 1); centerOn(me.x + 250, me.y - 100);
@@ -636,6 +637,7 @@
     // движение клеток: плавный облёт других клеток
     for (const c of cells) {
       if (c.owner !== 1) moveSel.delete(c);
+      else if (selAllSet && moveSel === selAllSet) moveSel.add(c);
       if (!c.owner) { c.dest = null; c.path = []; }
       if (!c.dest) { c.vx = c.vy = 0; continue; }
       moveCell(c, dt);
@@ -955,7 +957,7 @@
   addEventListener('keydown', e => {
     if (e.key === 'Escape') { moveSel = new Set(); sel = new Set(); tgts = []; box = null; }   // снять выделение со всех
     if (e.code === 'KeyA' && !e.ctrlKey && !e.metaKey && !e.altKey && state === 'play') {   // A: выделить все свои клетки
-      moveSel = new Set(cells.filter(c => c.owner === 1));
+      moveSel = selAllSet = new Set(cells.filter(c => c.owner === 1));
       e.preventDefault();
     }
     if (e.code === 'KeyF' && !e.ctrlKey && !e.metaKey && !e.altKey && state === 'play') {   // F: режим выравнивания единиц между своими клетками
@@ -1082,7 +1084,7 @@
     if (isTap && state === 'play') {
       const c = cellAt(pointer);
       if (c && c.owner === 1) {                  // тап по своей клетке — выбрать для перемещения
-                if (info && info.shift) { if (moveSel.has(c)) moveSel.delete(c); else moveSel.add(c); }   // Shift/Ctrl: добавить или убрать
+                if (info && info.shift) { selAllSet = null; if (moveSel.has(c)) moveSel.delete(c); else moveSel.add(c); }   // Shift/Ctrl: добавить или убрать
         else moveSel = new Set([c]);                                                              // обычный клик: выбрана только эта клетка
         lastTap = null;
       } else if (!c) {                           // одиночный тап по пустому месту — переместить выбранные
