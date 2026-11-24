@@ -757,7 +757,7 @@
         if (want < 1) continue;
         const n = Math.floor(Math.min(surplus, want));
         if (n < 1) continue;
-        const sent = sendN(d, r, n);
+        const sent = sendN(d, r, n, true);
         fut.set(d, fut.get(d) - sent); fut.set(r, fut.get(r) + sent);
       }
     }
@@ -811,11 +811,11 @@
   }
 
   // отправить ровно n единиц (бот не обязан тратить всё, чтобы оставлять резерв)
-  function sendN(src, target, n) {
+  function sendN(src, target, n, tag) {
     n = Math.min(Math.floor(n), avail(src));
     if (n < 1 || src === target) return 0;
     const ex = src.orders.find(o => o.target === target);
-    if (ex) ex.remaining += n; else src.orders.push({ target, remaining: n });
+    if (ex) ex.remaining += n; else src.orders.push({ target, remaining: n, bal: !!tag });
     return n;
   }
   const reservedTo = (B, t) => cells.reduce((a, c) => a + (c.owner === B ? c.orders.reduce((x, o) => x + (o.target === t ? o.remaining : 0), 0) : 0), 0);
@@ -968,6 +968,9 @@
     if ((e.code === 'KeyP' || e.code === 'Pause') && !e.ctrlKey && !e.metaKey && !e.altKey && state === 'play') { setPause(!paused); e.preventDefault(); }
     if (e.code === 'KeyF' && !e.ctrlKey && !e.metaKey && !e.altKey && state === 'play') {   // F: режим выравнивания единиц между своими клетками
       balanceOn = !balanceOn; balT = 0;
+      if (!balanceOn) for (const c of cells) if (c.owner === 1 && c.orders.some(o => o.bal)) {   // выключили: отменяем очереди, созданные выравниванием
+        c.orders = c.orders.filter(o => !o.bal); if (!c.orders.length) c.acc = 0;
+      }
       $('bal').classList.toggle('on', balanceOn);
       e.preventDefault();
     }
