@@ -1460,7 +1460,7 @@
     {                                                    // звёзды пачками: 6 уровней яркости — 6 заливок и 6 обводок лучей на весь экран
       const SL = qLevel >= 2 ? 0 : 6, dots = [], rays = [];
       for (let i = 0; i < SL; i++) { dots.push(new Path2D()); rays.push(new Path2D()); }
-      for (const st of stars) {
+      if (SL) for (const st of stars) {                // на низком качестве мерцающих звёзд нет (в фоне остаются неподвижные)
         const k = 0.5 + 0.5 * Math.sin(now * st.s + st.p);
         const a = st.a * (0.06 + 0.94 * k * k), q = Math.min(SL - 1, Math.floor(a * SL));
         const r = st.r * (0.7 + 0.5 * k);
@@ -1559,6 +1559,12 @@
     // клетки
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     selRings = new Path2D(); lodPaths = new Map();
+    // цели ваших приказов подсвечиваются, пока к ним идут единицы; клетка под курсором при выделенных — тоже
+    orderTargets = new Set();
+    for (const c of cells) if (c.owner === 1) for (const o of c.orders) orderTargets.add(o.target);
+    for (const u of squads) if (u.owner === 1) orderTargets.add(u.target);
+    hoverCell = moveSel.size && !dragging && lastScreen ? cellAt({ x: lastScreen.x / zoom + cam.x, y: lastScreen.y / zoom + cam.y }) : null;
+    if (hoverCell && hoverCell.owner === 1) hoverCell = null;
     for (const c of cells) if (inView(c.x, c.y, c.r + 80)) drawCell(c, now);
     for (const [col, p] of lodPaths) {
       if (col[0] === 'b') { ctx.lineWidth = 6 / zoom; ctx.strokeStyle = BONUS[col.slice(1)].col; ctx.stroke(p); }   // бонусы издалека — цветное кольцо
@@ -1606,7 +1612,7 @@
     if (now - miniT > .12) { miniT = now; drawMini(); }
   }
 
-  let selRings = null, lodPaths = new Map();
+  let selRings = null, lodPaths = new Map(), orderTargets = new Set(), hoverCell = null;
   const MANY = 150;                                     // упрощать линии и кольца (группы, без пунктира) — только когда их реально очень много
   // линии от многих клеток к одной цели объединяем: клетки в одной ячейке 400 px дают одну линию из их центра
   function addGroupedLines(path, pairs) {
@@ -1659,6 +1665,12 @@
     if (tgts.includes(c)) ring('#fbbf24');
     if (sel.has(c)) ring('#93c5fd');
     if (dragging && c.owner !== 1 && cellAt(pointer) === c) ring('#fbbf24');
+    if (c === hoverCell) ring('rgba(251,191,36,.85)', [6, 4]);                  // сюда уйдёт атака по левому клику
+    if (orderTargets.has(c) && c.owner !== 1) {                                 // цель атаки: пульсирующее янтарное кольцо, пока летят единицы
+      const k = .5 + .5 * Math.sin(now * 6);
+      ctx.beginPath(); ctx.arc(x, y, r + 10 + 3 * k, 0, 6.2832);
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(251,191,36,' + (.5 + .4 * k) + ')'; ctx.stroke();
+    }
 
     if (c.bonus) {                                                  // золотое кольцо и молния
       const k = 0.5 + 0.5 * Math.sin(now * 4);
