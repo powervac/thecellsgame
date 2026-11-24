@@ -599,6 +599,23 @@
     c.stuck = 0;
   }
 
+  function separate(c, depth, from) {
+    for (const o of cells) {
+      if (o === c || o === from) continue;
+      const ox = c.x - o.x, oy = c.y - o.y, od = Math.hypot(ox, oy) || 1;
+      const min = c.r + o.r + 4, pen = min - od;
+      if (pen <= 0) continue;
+      const a = o.size / (c.size + o.size);                    // доля отступа двигающейся клетки: перед крупной соседкой она отступает почти целиком
+      const nx = ox / od, ny = oy / od;
+      c.x += nx * pen * a; c.y += ny * pen * a;
+      o.x -= nx * pen * (1 - a); o.y -= ny * pen * (1 - a);
+      o.x = Math.max(o.r + 4, Math.min(W - o.r - 4, o.x));
+      o.y = Math.max(o.r + PADT, Math.min(H - o.r - PADB, o.y));
+      if (o.dest) o.stuck = 0;
+      if (depth < 3) separate(o, depth + 1, c);              // сдвинутая клетка может толкнуть следующую
+    }
+  }
+
   function moveCell(c, dt) {
     const sp = moveSpeed(c);
     let dx = c.dest.x - c.x, dy = c.dest.y - c.y;
@@ -628,7 +645,7 @@
       const gap = od - c.r - o.r;
       if (gap >= M) continue;
       ox /= od; oy /= od;
-      const k = Math.pow(1 - Math.max(gap, 0) / M, 1.5);
+      const k = Math.pow(1 - Math.max(gap, 0) / M, 1.5) * Math.min(1, Math.pow(o.size / c.size, 2.5));   // крупная клетка не обходит мелкие: она их расталкивает
       // касательная к препятствию, в сторону движения
       let tx = -oy, ty = ox;
       if (tx * dx + ty * dy < 0) { tx = -tx; ty = -ty; }
@@ -643,8 +660,9 @@
     c.vx += (wx - c.vx) * f; c.vy += (wy - c.vy) * f;
     const px = c.x, py = c.y;
     c.x += c.vx * dt; c.y += c.vy * dt;
-    // жёсткое разделение, чтобы клетки не наезжали друг на друга
-    for (const o of cells) {
+    // клетки не налезают друг на друга и расталкивают друг друга: чем крупнее клетка, тем легче она сдвигает соседей и тем труднее сдвинуть её саму
+    separate(c, 0);
+    for (const o of cells) {                                  // страховка: если соседа сдвинуть некуда (край карты, цепочка), мы отступаем полностью
       if (o === c) continue;
       const ox = c.x - o.x, oy = c.y - o.y, od = Math.hypot(ox, oy) || 1;
       const min = c.r + o.r + 4;
