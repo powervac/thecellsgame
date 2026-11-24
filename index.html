@@ -17,6 +17,7 @@
   #hud .sep { width:1px; height:24px; background:var(--line); margin:0 18px; }
   #hud .who { display:flex; align-items:center; gap:10px; }
   #hud b { font-weight:700; }
+  #hud.many { font-size:14px; padding:0 14px; } #hud.many .sep { margin:0 9px; } #hud.many .who { gap:6px; } #hud.many .dot { width:13px; height:13px; }
   .dot { width:20px; height:20px; border-radius:50%; display:inline-block; }
   .dot.b { background:radial-gradient(circle at 35% 30%, #8cc4ff, #1f6bff 70%); box-shadow:0 0 12px 2px rgba(47,140,255,.8); }
   .dot.g { background:radial-gradient(circle at 35% 30%, #b4f7d2, #19b866 70%); box-shadow:0 0 12px 2px rgba(61,220,132,.8); }
@@ -57,20 +58,14 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="hud" class="pill">
-  <span class="who"><span class="dot b"></span>Вы: <b id="bc">0</b> кл. / <b id="bu">0</b></span>
-  <span class="sep"></span>
-  <span class="who"><span class="dot r"></span>Красный: <b id="rc">0</b> кл. / <b id="ru">0</b></span>
-  <span class="sep"></span>
-  <span class="who"><span class="dot g"></span>Зелёный: <b id="gc">0</b> кл. / <b id="gu">0</b></span>
-</div>
+<div id="hud" class="pill"></div>
 <button id="restart" class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 3v5h-5"/></svg>Заново</button>
 <button id="mute" class="pill" title="Звук"><svg class="on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg><svg class="off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="m16 9 5 6M21 9l-5 6"/></svg></button>
 <canvas id="mini" width="400" height="240"></canvas>
 <div id="overlay">
   <div class="card">
     <h1 id="title">The Cells Game</h1>
-    <p id="msg">Зажмите свою (синюю) клетку и отпустите на цели: единицы вылетят цепочкой. Проведите через другие свои клетки, чтобы атаковать сразу из всех. Тап по своей клетке, затем тап по пустому месту — переместить её. Захватите все клетки красного и зелёного ботов: они воюют и друг с другом.</p>
+    <p id="msg">Зажмите свою (синюю) клетку и отпустите на цели: единицы вылетят цепочкой. Проведите через другие свои клетки, чтобы атаковать сразу из всех. Тап по своей клетке, затем тап по пустому месту — переместить её. Захватите все клетки ботов (на обычной карте 2, на большой 5): они воюют и друг с другом.</p>
     <div class="label">Карта</div>
     <div class="row" id="mapRow">
       <button data-m="normal">Обычная</button>
@@ -95,8 +90,8 @@
 (() => {
   // режимы карты: обычная (одно поле) и большая (в 9 раз по площади, со скроллингом)
   const MAPS = {
-    normal: { W: 1200, H: 720,  N: 20,  SPEED: 150, edge: 75,  spread: 90,  greenY: 14, greenX: 1 / 6 },
-    big:    { W: 3600, H: 2160, N: 180, SPEED: 200, edge: 160, spread: 160, greenY: 60, greenX: 1 / 3 },
+    normal: { bots: 2, W: 1200, H: 720,  N: 20,  SPEED: 150, edge: 75,  spread: 90,  greenY: 14, greenX: 1 / 6 },
+    big:    { bots: 5, W: 3600, H: 2160, N: 180, SPEED: 200, edge: 160, spread: 160, greenY: 60, greenX: 1 / 3 },
   };
   let dynMode = false;                // эксперимент: размер клетки следует за числом единиц
   try { dynMode = localStorage.getItem('cells-dyn') === '1'; } catch (e) {}
@@ -108,9 +103,15 @@
     1: { edge: '#3b9bff', s0: 'rgba(8,36,110,.55)',  s1: 'rgba(18,70,200,.35)',  s2: 'rgba(70,150,255,.75)' },
     2: { edge: '#ff4d4d', s0: 'rgba(110,8,20,.92)',  s1: 'rgba(190,18,30,.88)',  s2: 'rgba(255,80,80,.98)' },
     3: { edge: '#3ddc84', s0: 'rgba(4,70,38,.92)',   s1: 'rgba(16,150,80,.85)',  s2: 'rgba(90,240,150,.98)' },
+    4: { edge: '#ffa11f', s0: 'rgba(120,56,0,.92)',  s1: 'rgba(205,110,10,.88)', s2: 'rgba(255,175,60,.98)' },
+    5: { edge: '#b866ff', s0: 'rgba(60,15,110,.92)', s1: 'rgba(125,50,205,.88)', s2: 'rgba(200,140,255,.98)' },
+    6: { edge: '#ffe74d', s0: 'rgba(105,92,0,.92)',  s1: 'rgba(190,170,10,.88)', s2: 'rgba(255,240,110,.98)' },
   };
-  const BOTS = [2, 3];
-  const UCOL = { 1: '47,140,255', 2: '255,59,59', 3: '47,224,127' };
+  let BOTS = [2, 3];                  // владельцы-боты (на большой карте 5)
+  const UCOL = { 1: '47,140,255', 2: '255,59,59', 3: '47,224,127', 4: '255,161,31', 5: '184,102,255', 6: '255,231,77' };
+  const UCORE = { 1: '#bfe0ff', 2: '#ffc4c4', 3: '#c8fbe0', 4: '#ffdca8', 5: '#e6ccff', 6: '#fff6b0' };
+  const MCOL = { 1: '#3b9bff', 2: '#ff4d4d', 3: '#3ddc84', 4: '#ffa11f', 5: '#b866ff', 6: '#ffe74d' };
+  const PNAME = { 2: 'Красный', 3: 'Зелёный', 4: 'Оранжевый', 5: 'Фиолетовый', 6: 'Жёлтый' };
   // ---------- звук (синтез через Web Audio, без файлов) ----------
   let AC = null, master = null, noiseBuf = null, hum = null, muted = false, lastT = { hit: 0, join: 0, move: 0 };
   try { muted = localStorage.getItem('cells-muted') === '1'; } catch (e) {}
@@ -416,6 +417,9 @@
   sprites[1] = makeSprite('#2f8cff', '#8cc8ff');
   sprites[2] = makeSprite('#ff3b3b', '#ff9a9a');
   sprites[3] = makeSprite('#2fe07f', '#b4f7d2');
+  sprites[4] = makeSprite('#ffa11f', '#ffdca8');
+  sprites[5] = makeSprite('#b866ff', '#e6ccff');
+  sprites[6] = makeSprite('#ffe74d', '#fff6b0');
   resize(); buildBg();
 
   const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -435,6 +439,12 @@
       list.push(mk(MAP.edge, by, 1, START_SIZE, BOT_START_UNITS[diff]));
       list.push(mk(W - MAP.edge, ry, 2, 10, BOT_START_UNITS[diff]));   // красный: маленькая клетка
       list.push(mk(W / 2 + (Math.random() - .5) * W * MAP.greenX, PADT + gr + MAP.greenY, 3, START_SIZE, BOT_START_UNITS[diff]));
+      if (MAP.bots > 2) {                               // остальные боты: снизу по центру, сверху слева и справа
+        list.push(mk(W / 2 + (Math.random() - .5) * W * .12, H - PADB - gr - 40, 4, START_SIZE, BOT_START_UNITS[diff]));
+        list.push(mk(W * .13, PADT + gr + 40, 5, START_SIZE, BOT_START_UNITS[diff]));
+        list.push(mk(W * .87, PADT + gr + 40, 6, START_SIZE, BOT_START_UNITS[diff]));
+      }
+      const nStart = list.length;
       let tries = 0;
       while (list.length < N && tries < 60000) {
         tries++;
@@ -442,7 +452,7 @@
         const c = mk(0, 0, 0, size, size);
         c.x = c.r + 10 + Math.random() * (W - 2 * c.r - 20);
         c.y = c.r + PADT + Math.random() * (H - 2 * c.r - PADT - PADB);
-        const ok = list.every((o, i) => dist(c, o) >= c.r + o.r + gap + (i < 3 ? MAP.spread : 0));
+        const ok = list.every((o, i) => dist(c, o) >= c.r + o.r + gap + (i < nStart ? MAP.spread : 0));
         if (ok) list.push(c);
       }
       if (list.length === N) { list.forEach((c, i) => c.id = i); return list; }
@@ -472,6 +482,8 @@
 
   function applyMap() {
     MAP = MAPS[mapMode]; W = MAP.W; H = MAP.H; N = MAP.N; SPEED = MAP.SPEED;
+    BOTS = [2, 3, 4, 5, 6].slice(0, MAP.bots);
+    buildHud();
     resize();                                         // пересчитать допустимый масштаб
   }
 
@@ -486,7 +498,8 @@
       zoom = clampZ(innerWidth / 1300);
       const me = cells.find(c => c.owner === 1); centerOn(me.x + 250, me.y - 100);
     } else { zoom = minZoom; clampCam(); }          // на обычной карте видно всё поле целиком
-    botTimer = { 2: 1.5, 3: 2.4 }; botMoveTimer = { 2: 4, 3: 5.5 };
+    botTimer = {}; botMoveTimer = {};
+    BOTS.forEach((B, i) => { botTimer[B] = 1.5 + i * .45; botMoveTimer[B] = 4 + i * 1.3; });
     state = 'play';
     overlay.classList.add('hidden');
   }
@@ -720,7 +733,7 @@
   function endGame(humanWon) {
     state = 'end';
     titleEl.textContent = humanWon ? 'Победа!' : 'Поражение';
-    msgEl.textContent = humanWon ? 'Оба бота побеждены.' : 'Боты захватили все ваши клетки.';
+    msgEl.textContent = humanWon ? (BOTS.length > 2 ? 'Все боты побеждены.' : 'Оба бота побеждены.') : 'Боты захватили все ваши клетки.';
     $('playBtn').textContent = 'Играть снова';
     overlay.classList.remove('hidden');
   }
@@ -729,21 +742,21 @@
   let incCache = null;                                   // единицы в полёте: цель -> счётчики по владельцам (пересчитывается раз за кадр)
   function flying() {
     if (!incCache) {
-      incCache = { to: new Map(), own: [0, 0, 0, 0] };
+      incCache = { to: new Map(), own: new Array(8).fill(0) };
       for (const s of squads) {
         let a = incCache.to.get(s.target);
-        if (!a) incCache.to.set(s.target, a = [0, 0, 0, 0]);
+        if (!a) incCache.to.set(s.target, a = new Array(8).fill(0));
         a[s.owner]++; incCache.own[s.owner]++;
       }
     }
     return incCache;
   }
-  const incoming = (cell, owner) => (flying().to.get(cell) || [0, 0, 0, 0])[owner]
+  const incoming = (cell, owner) => (flying().to.get(cell) || [])[owner] | 0
     + cells.reduce((a, c) => a + (c.owner === owner ? c.orders.reduce((x, o) => x + (o.target === cell ? o.remaining : 0), 0) : 0), 0);
   const travel = (a, b) => Math.max(0, (dist(a, b) - b.r) / SPEED);
   
 
-  const hostileIn = (cell, B) => [1, 2, 3].reduce((a, o) => a + (o === B ? 0 : incoming(cell, o)), 0);
+  const hostileIn = (cell, B) => [1, ...BOTS].reduce((a, o) => a + (o === B ? 0 : incoming(cell, o)), 0);
   const strengthOf = o => cells.reduce((a, c) => a + (c.owner === o ? c.units : 0), 0) + flying().own[o];
 
   // единицы не пролетают сквозь клетки: возвращает клетку, которая перекроет путь от src к t
@@ -1196,9 +1209,8 @@
     {
       const vx0 = cam.x - 30, vy0 = cam.y - 30, vx1 = cam.x + innerWidth / zoom + 30, vy1 = cam.y + innerHeight / zoom + 30;
       const fancy = squads.length < 1500;
-      for (let o = 1; o <= 3; o++) {
-        const col = o === 1 ? '47,140,255' : o === 2 ? '255,59,59' : '47,224,127';
-        const core = o === 1 ? '#bfe0ff' : o === 2 ? '#ffc4c4' : '#c8fbe0';
+      for (let o = 1; o <= BOTS.length + 1; o++) {
+        const col = UCOL[o], core = UCORE[o];
         let any = false;
         if (fancy) {                                     // хвосты и свечение
           ctx.beginPath();
@@ -1317,14 +1329,14 @@
     g.clearRect(0, 0, w, h);
     const sx = (w - 24) / W, sy = (h - 24) / H;
     for (const c of cells) {
-      const col = c.owner === 1 ? '#3b9bff' : c.owner === 2 ? '#ff4d4d' : c.owner === 3 ? '#3ddc84' : 'rgba(205,220,255,.75)';
+      const col = MCOL[c.owner] || 'rgba(205,220,255,.75)';
       g.fillStyle = col;
       g.beginPath(); g.arc(12 + c.x * sx, 12 + c.y * sy, 1.6 + c.size / 22, 0, Math.PI * 2); g.fill();
     }
-    for (let o = 1; o <= 3; o++) {
+    for (let o = 1; o <= BOTS.length + 1; o++) {
       g.beginPath();
       for (const u of squads) if (u.owner === o) g.rect(12 + u.x * sx - 1, 12 + u.y * sy - 1, 2, 2);
-      g.fillStyle = o === 1 ? '#8cc8ff' : o === 2 ? '#ff9a9a' : '#b4f7d2';
+      g.fillStyle = UCORE[o];
       g.fill();
     }
     // прямоугольник того, что сейчас видно на экране
@@ -1335,6 +1347,17 @@
   const txtCache = {};
   function setTxt(id, v) { if (txtCache[id] !== v) { txtCache[id] = v; $(id).textContent = v; } }
 
+  function buildHud() {
+    const h = $('hud'); let html = '';
+    for (let o = 1; o <= BOTS.length + 1; o++) {
+      if (o > 1) html += '<span class="sep"></span>';
+      html += '<span class="who"><span class="dot" style="background:' + MCOL[o] + ';box-shadow:0 0 8px ' + MCOL[o] + '"></span>' + (o === 1 ? 'Вы' : PNAME[o]) + ': <b id="c' + o + '">0</b> кл. / <b id="u' + o + '">0</b></span>';
+    }
+    h.classList.toggle('many', BOTS.length > 2);
+    h.innerHTML = html;
+    for (const k in txtCache) delete txtCache[k];
+  }
+
   function updateHud() {
     const stat = o => {
       let c = 0, u = 0;
@@ -1342,8 +1365,7 @@
       u += flying().own[o];
       return [c, u];
     };
-    const [bc, bu] = stat(1), [rc, ru] = stat(2), [gc, gu] = stat(3);
-    setTxt('bc', bc); setTxt('bu', bu); setTxt('rc', rc); setTxt('ru', ru); setTxt('gc', gc); setTxt('gu', gu);
+    for (let o = 1; o <= BOTS.length + 1; o++) { const [c, u] = stat(o); setTxt('c' + o, c); setTxt('u' + o, u); }
   }
 
   function frame(t) {
@@ -1377,6 +1399,7 @@
     requestAnimationFrame(frame);
   }
 
+  BOTS = [2, 3, 4, 5, 6].slice(0, MAP.bots); buildHud();
   cells = genCells(); // фон для меню
   requestAnimationFrame(frame);
 
