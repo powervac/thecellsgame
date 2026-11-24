@@ -21,6 +21,8 @@
   #hud b { font-weight:700; }
   #bal { flex:none; padding:8px 18px; border-radius:14px; font-size:clamp(14px,1.5vw,22px); font-weight:800; line-height:1.15; text-align:center; display:none; pointer-events:none; color:#fff; background:rgba(20,110,60,.92); border:2px solid #3ddc84; box-shadow:0 0 18px rgba(61,220,132,.7); animation:balp 1.4s ease-in-out infinite; }
   #bal.on { display:block; }
+  #boost { flex:none; padding:8px 18px; border-radius:14px; font-size:clamp(14px,1.5vw,22px); font-weight:800; line-height:1.15; text-align:center; display:none; pointer-events:none; color:#fff; background:rgba(150,110,0,.92); border:2px solid #ffd740; box-shadow:0 0 18px rgba(255,215,64,.7); }
+  #boost.on { display:block; }
   #pause { top:50%; left:50%; transform:translate(-50%,-50%); padding:16px 36px; font-size:28px; font-weight:800; display:none; pointer-events:none; color:#fff; background:rgba(20,40,110,.92); box-shadow:0 0 30px rgba(80,140,255,.7); white-space:nowrap; }
   #pause.on { display:block; }
   @keyframes balp { 50% { box-shadow:0 0 40px rgba(61,220,132,1); } }
@@ -70,7 +72,7 @@
 
 <button id="restart" class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 3v5h-5"/></svg>Заново</button>
 <button id="mute" class="pill" title="Звук"><svg class="on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg><svg class="off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="m16 9 5 6M21 9l-5 6"/></svg></button>
-<div id="bar"><div id="hud"></div><div id="bal">⚖ ВЫРАВНИВАНИЕ ВКЛ<br><small style="font-weight:600;opacity:.85">F — выключить</small></div><canvas id="mini" width="400" height="240"></canvas></div>
+<div id="bar"><div id="hud"></div><div id="boost">⚡ УСКОРЕНИЕ ×3<br><small id="boostT"></small></div><div id="bal">⚖ ВЫРАВНИВАНИЕ ВКЛ<br><small style="font-weight:600;opacity:.85">F — выключить</small></div><canvas id="mini" width="400" height="240"></canvas></div>
 <div id="overlay">
   <div class="card">
     <h1 id="title">The Cells Game</h1>
@@ -99,8 +101,8 @@
 (() => {
   // режимы карты: обычная (одно поле) и большая (в 9 раз по площади, со скроллингом)
   const MAPS = {
-    normal: { bots: 2, W: 1200, H: 720,  N: 20,  SPEED: 150, edge: 75,  spread: 90,  greenY: 14, greenX: 1 / 6 },
-    big:    { bots: 5, W: 3600, H: 2160, N: 180, SPEED: 200, edge: 160, spread: 160, greenY: 60, greenX: 1 / 3 },
+    normal: { bots: 2, bonus: 2, W: 1200, H: 720,  N: 20,  SPEED: 150, edge: 75,  spread: 90,  greenY: 14, greenX: 1 / 6 },
+    big:    { bots: 5, bonus: 6, W: 3600, H: 2160, N: 180, SPEED: 200, edge: 160, spread: 160, greenY: 60, greenX: 1 / 3 },
   };
   let dynMode = false;                // эксперимент: размер клетки следует за числом единиц
   try { dynMode = localStorage.getItem('cells-dyn') === '1'; } catch (e) {}
@@ -325,7 +327,9 @@
   const START_SIZE = 20;                  // размер стартовых клеток игроков
   const radiusOf = size => 14 + size * 0.6;   // 10 -> 20 px, 50 -> 44 px
   const MOVE_K = 600;                     // скорость движения клетки = MOVE_K / размер (px/с)
-  const moveSpeed = c => MOVE_K / 10;     // все клетки движутся со скоростью самой маленькой (размер 10): 60 px/с
+  const boost = {};                       // владелец -> игровое время, до которого его клетки движутся втрое быстрее
+  const BOOST_TIME = 60, BOOST_K = 3;
+  const moveSpeed = c => MOVE_K / 10 * (boost[c.owner] > gameT ? BOOST_K : 1);     // все клетки движутся со скоростью самой маленькой (размер 10): 60 px/с
   const rate = c => c.size / 10;          // прирост единиц в секунду: пропорционально размеру
   let SPEED = MAP.SPEED;         // скорость единицы, px/с
   const LAUNCH = 4;              // единиц в секунду, которые выпускает клетка размера 10
@@ -471,7 +475,12 @@
         const ok = list.every((o, i) => dist(c, o) >= c.r + o.r + gap + (i < nStart ? MAP.spread : 0));
         if (ok) list.push(c);
       }
-      if (list.length === N) { list.forEach((c, i) => c.id = i); return list; }
+      if (list.length === N) {
+        list.forEach((c, i) => c.id = i);
+        const pool = list.filter(c => !c.owner);                       // бонусные клетки: захват даёт ускорение движения
+        for (let k = 0; k < MAP.bonus && pool.length; k++) pool.splice(Math.floor(Math.random() * pool.length), 1)[0].bonus = true;
+        return list;
+      }
     }
     return genCells();
   }
@@ -499,7 +508,7 @@
   function applyMap() {
     MAP = MAPS[mapMode]; W = MAP.W; H = MAP.H; N = MAP.N; SPEED = MAP.SPEED;
     BOTS = [2, 3, 4, 5, 6].slice(0, MAP.bots);
-    balanceOn = false; gameT = 0; $('bal').classList.remove('on'); setPause(false);
+    balanceOn = false; gameT = 0; for (const k in boost) delete boost[k]; $('bal').classList.remove('on'); setPause(false);
     buildHud();
     resize();                                         // пересчитать допустимый масштаб
   }
@@ -552,6 +561,10 @@
     if (c.owner === u.owner) { c.units += 1; hitFx(u, c, 'join'); }
     else if (c.units >= 1) { c.units -= 1; hitFx(u, c, 'hit'); }
     else {
+      if (c.bonus) {                                              // бонусная клетка: захватчик получает ускорение на 60 секунд
+        c.bonus = false; boost[u.owner] = gameT + BOOST_TIME;
+        fx.push({ k: 'wave', x: c.x, y: c.y, col: '255,220,60', t: 0, life: 1.1, r0: c.r, r1: c.r + 160 });
+      }
       if (c.owner === 1 && balanceOn) c.recap = gameT + 10;      // враг отбил клетку у выравнивания: 10 секунд считаем её своей и пытаемся вернуть
       c.units = 1 - c.units; c.owner = u.owner; c.orders = []; c.acc = 0;
       hitFx(u, c, 'capture');
@@ -1332,6 +1345,16 @@
     if (sel.has(c)) ring('#93c5fd');
     if (dragging && c.owner !== 1 && cellAt(pointer) === c) ring('#fbbf24');
 
+    if (c.bonus) {                                                  // золотое кольцо и молния
+      const k = 0.5 + 0.5 * Math.sin(now * 4);
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,214,64,' + (.65 + .35 * k) + ')'; ctx.lineWidth = 4; ctx.shadowColor = '#ffd740'; ctx.shadowBlur = 14;
+      ctx.beginPath(); ctx.arc(x, y, r + 5 + 3 * k, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+      ctx.font = '700 ' + Math.round(Math.max(14, r * .7)) + 'px sans-serif';
+      ctx.fillStyle = '#ffd740'; ctx.fillText('⚡', x, y - r - 12 - 3 * k);
+    }
+
     // число единиц (у совсем мелких кружков при сильном отдалении не рисуем)
     if (r * zoom > 7) {
       ctx.font = '700 ' + Math.round(15 + c.size * 0.22) + 'px "Segoe UI", system-ui, sans-serif';
@@ -1389,7 +1412,7 @@
     g.clearRect(0, 0, w, h);
     const sx = (w - 24) / W, sy = (h - 24) / H;
     for (const c of cells) {
-      const col = MCOL[c.owner] || 'rgba(205,220,255,.75)';
+      const col = c.bonus ? '#ffd740' : MCOL[c.owner] || 'rgba(205,220,255,.75)';
       g.fillStyle = col;
       g.beginPath(); g.arc(12 + c.x * sx, 12 + c.y * sy, 1.6 + c.size / 22, 0, Math.PI * 2); g.fill();
     }
@@ -1418,7 +1441,14 @@
     for (const k in txtCache) delete txtCache[k];
   }
 
+  function updateBoostHud() {
+    const left = Math.max(0, boost[1] - gameT) || 0;
+    $('boost').classList.toggle('on', left > 0);
+    if (left > 0) setTxt('boostT', 'ещё ' + Math.ceil(left) + ' с');
+  }
+
   function updateHud() {
+    updateBoostHud();
     const stat = o => {
       let c = 0, u = 0;
       for (const x of cells) if (x.owner === o) { c++; u += Math.floor(x.units); }
