@@ -658,6 +658,23 @@
     for (let ix = gx - 1; ix <= gx + 1; ix++) for (let iy = gy - 1; iy <= gy + 1; iy++) { const l = moveGrid.get(ix * 10000 + iy); if (l) for (const o of l) out.push(o); }
     return out;
   }
+  // клетки, налезшие друг на друга (толпа, вытолкнутые соседи), каждый кадр плавно расходятся: крупная сдвигается меньше мелкой
+  function relaxOverlaps() {
+    moveGrid = null;
+    for (const c of cells) {
+      for (const o of nearCells(c)) {
+        if (o.id <= c.id) continue;                           // каждую пару — один раз
+        const dx = c.x - o.x, dy = c.y - o.y, d = Math.hypot(dx, dy) || .01;
+        const pen = c.r + o.r + 4 - d;
+        if (pen <= 0) continue;
+        const push = Math.min(pen, 6);                        // не больше 6 px за кадр: расходятся плавно
+        const a = o.size / (c.size + o.size), nx = dx / d, ny = dy / d;
+        c.x += nx * push * a; c.y += ny * push * a;
+        o.x -= nx * push * (1 - a); o.y -= ny * push * (1 - a);
+        for (const q of [c, o]) { q.x = Math.max(q.r + 4, Math.min(W - q.r - 4, q.x)); q.y = Math.max(q.r + PADT, Math.min(H - q.r - PADB, q.y)); }
+      }
+    }
+  }
   function separate(c, depth, from) {
     for (const o of nearCells(c)) {
       if (o === c || o === from) continue;
@@ -774,6 +791,7 @@
       if (!c.dest) { c.vx = c.vy = 0; continue; }
       moveCell(c, dt);
     }
+    relaxOverlaps();
 
     // выпуск единиц цепочкой
     for (const c of cells) {
