@@ -939,6 +939,7 @@
     const cand = cells.filter(t => t.owner !== B)
       .map(t => ({ t, d: mine.reduce((m, c) => Math.min(m, dist(c, t)), Infinity) }))
       .sort((a, b) => a.d - b.d).slice(0, 30).map(x => x.t);
+    for (const t of cells) if (t.bonus && !cand.includes(t)) cand.push(t);   // бонусные клетки бот рассматривает, даже если они далеко
     for (const t of cand) {
       // в режиме живых клеток бот копит единицы, чтобы раздуть клетки, и не атакует врагов слишком рано
       if (dynMode && t.owner && total < cfg.hoard * myCells.length) continue;
@@ -967,6 +968,7 @@
       const use = g.use;
       const enemy = t.owner !== 0;
       let gain = rate(t) * (enemy ? 2.2 : 1) + 0.3;                 // +0.3: сама по себе клетка тоже ценна
+      if (t.bonus) gain = gain * 3 + 2;                             // бонусная клетка (ускорение) очень ценна
       if (enemy) {
         if (str[t.owner] === undefined) str[t.owner] = strengthOf(t.owner);
         if (str[t.owner] < myStr) gain *= 1.4;               // добиваем более слабого
@@ -978,7 +980,8 @@
       options.push({ t, use, need, score });
     }
     if (!options.length) return false;
-    const pick = cfg.random ? options[Math.floor(Math.random() * options.length)]
+    const bonusOpts = options.filter(o => o.t.bonus);
+    const pick = cfg.random ? (bonusOpts.length && Math.random() < .5 ? bonusOpts[Math.floor(Math.random() * bonusOpts.length)] : options[Math.floor(Math.random() * options.length)])
                             : options.reduce((a, b) => (b.score > a.score ? b : a));
     spend(pick.use, pick.t, pick.need);
     return true;
