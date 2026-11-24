@@ -434,9 +434,9 @@
   let last = 0;
 
   const DIFF = {
-    easy:   { interval: 3.0, spend: .7, actK: .03, hoard: 40, buffer: 3, random: true,  defend: false, moveEvery: 9, maxMove: 20 },
-    medium: { interval: 1.6, spend: .6, actK: .1, hoard: 60, buffer: 2, random: false, defend: false, moveEvery: 5, maxMove: 30 },
-    hard:   { interval: 0.8, spend: .65, actK: .22, hoard: 80, buffer: 1, random: false, defend: true,  moveEvery: 3, maxMove: 40 },
+    easy:   { interval: 3.0, spend: .7, actK: .03, hoard: 40, buffer: 3, random: true,  defend: false, moveEvery: 6, maxMove: 20, moveK: .04 },
+    medium: { interval: 1.6, spend: .6, actK: .1, hoard: 60, buffer: 2, random: false, defend: false, moveEvery: 3, maxMove: 30, moveK: .08 },
+    hard:   { interval: 0.8, spend: .65, actK: .22, hoard: 80, buffer: 1, random: false, defend: true,  moveEvery: 2, maxMove: 40, moveK: .14 },
   };
 
   let VH = innerHeight;               // высота игрового поля: весь экран за вычетом нижней панели (~10%)
@@ -1141,28 +1141,55 @@
   }
 
   // бот двигает клетки: небольшие клетки сближаются с целью, чтобы единицам лететь меньше
+  // бот двигает клетки: за раз несколько, в первую очередь тыловые — к линии фронта, к бонусам и к ослабленным врагам,
+  // чтобы единицам лететь меньше. Размер клетки не ограничивает: все клетки движутся с одной скоростью
   function botMove(B) {
     const cfg = DIFF[diff];
-    const idle = cells.filter(c => c.owner === B && !c.dest && c.size <= cfg.maxMove);
+    const mine = cells.filter(c => c.owner === B);
+    const idle = mine.filter(c => !c.dest);
     if (!idle.length) return;
-    const c = idle[Math.floor(Math.random() * idle.length)];
-    let gx, gy;
-    if (cfg.random) {
-      const a = Math.random() * Math.PI * 2, len = 60 + Math.random() * 100;
-      gx = c.x + Math.cos(a) * len; gy = c.y + Math.sin(a) * len;
-    } else {
-      const foes = cells.filter(t => t.owner !== B);
-      if (!foes.length) return;
-      // ближайшая цель, крупные клетки чуть привлекательнее
-      const t = foes.reduce((a, b) => (dist(c, b) - b.size * 2 < dist(c, a) - a.size * 2 ? b : a));
-      const d = dist(c, t);
-      const stop = c.r + t.r + 80;                // не подплываем вплотную
-      const go = Math.min(d * 0.4, d - stop, 200);
-      if (go < 20) return;
-      gx = c.x + (t.x - c.x) / d * go; gy = c.y + (t.y - c.y) / d * go;
+    const n = Math.min(8, 1 + Math.floor(mine.length * cfg.moveK));
+    if (cfg.random) {                                         // лёгкий: бродит случайно
+      for (let i = 0; i < n; i++) {
+        const c = idle[Math.floor(Math.random() * idle.length)];
+        const a = Math.random() * Math.PI * 2, len = 80 + Math.random() * 160;
+        setBotDest(c, c.x + Math.cos(a) * len, c.y + Math.sin(a) * len);
+      }
+      return;
     }
-    sfxLaunchMove(c, false);
+    // цели: чужие клетки (враги важнее нейтральных) и бонусы; ищем ближайшую по сетке
+    const g = cellGridPB();
+    const nearestFoe = c => {
+      let best = null, bd = Infinity;
+      for (let R = 1; R <= 40 && !best; R *= 2) {
+        const gx = Math.floor(c.x / PG), gy = Math.floor(c.y / PG);
+        for (let ix = gx - R; ix <= gx + R; ix++) for (let iy = gy - R; iy <= gy + R; iy++) {
+          const l = g.get(ix * 10000 + iy); if (!l) continue;
+          for (const t of l) {
+            if (t.owner === B) continue;
+            const d = dist(c, t) - (t.owner ? 120 : 0) - (t.bonus ? 250 : 0);   // враги и бонусы притягивают сильнее
+            if (d < bd) { bd = d; best = t; }
+          }
+        }
+      }
+      return best;
+    };
+    // тыловые клетки (дальше всего от чужих) двигаем первыми
+    const cand = idle.map(c => { const t = nearestFoe(c); return { c, t, d: t ? dist(c, t) : 0 }; })
+      .filter(x => x.t && x.d > x.c.r + x.t.r + 140)
+      .sort((a, b) => b.d - a.d)
+      .slice(0, n);
+    for (const { c, t, d } of cand) {
+      const stop = c.r + t.r + 90;                            // не подплываем вплотную
+      const go = Math.min(d - stop, 450);
+      if (go < 30) continue;
+      setBotDest(c, c.x + (t.x - c.x) / d * go, c.y + (t.y - c.y) / d * go);
+    }
+  }
+  function setBotDest(c, gx, gy) {
+    if (inView(c.x, c.y, 0)) sfxLaunchMove(c, false);
     c.dest = { x: Math.max(c.r + 6, Math.min(W - c.r - 6, gx)), y: Math.max(c.r + PADT, Math.min(H - c.r - PADB, gy)) };
+    c.path = []; c.stuck = 0; c.grp = 1;
   }
 
   // ---------- ввод ----------
