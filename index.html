@@ -639,45 +639,58 @@
       }
     }
 
+    // сетка клеток: единице достаточно проверить клетки своей ячейки, а не все клетки карты
+    const CG = 128, cw = Math.ceil(W / CG) + 1, ch = Math.ceil(H / CG) + 1;
+    const cgrid = new Array(cw * ch);
+    for (const c of cells) {
+      const x0 = Math.max(0, Math.floor((c.x - c.r - UR) / CG)), x1 = Math.min(cw - 1, Math.floor((c.x + c.r + UR) / CG));
+      const y0 = Math.max(0, Math.floor((c.y - c.r - UR) / CG)), y1 = Math.min(ch - 1, Math.floor((c.y + c.r + UR) / CG));
+      for (let gx = x0; gx <= x1; gx++) for (let gy = y0; gy <= y1; gy++) (cgrid[gx * ch + gy] || (cgrid[gx * ch + gy] = [])).push(c);
+    }
     // движение: единица не пролетает сквозь клетки, а попадает в первую встреченную
+    const step = SPEED * dt;
     for (const u of squads) {
       const t = u.target;
-      const d = dist(u, t) || 1;
-      const step = SPEED * dt;
-      u.dx = (t.x - u.x) / d; u.dy = (t.y - u.y) / d;
+      const tx = t.x - u.x, ty = t.y - u.y, d = Math.sqrt(tx * tx + ty * ty) || 1;
+      u.dx = tx / d; u.dy = ty / d;
       u.x += u.dx * step;
       u.y += u.dy * step;
-      for (const c of cells) {
-        const dc = Math.hypot(u.x - c.x, u.y - c.y);
+      const gx = Math.floor(u.x / CG), gy = Math.floor(u.y / CG);
+      const lst = gx >= 0 && gy >= 0 && gx < cw && gy < ch ? cgrid[gx * ch + gy] : null;
+      if (!lst) continue;
+      for (const c of lst) {
+        const ex = u.x - c.x, ey = u.y - c.y, dc2 = ex * ex + ey * ey;
         if (c === u.src && !u.left) {                 // пока не вылетела из клетки-источника, она её не задевает
-          if (dc > c.r + UR + 2) u.left = true;
+          const lim = c.r + UR + 2;
+          if (dc2 > lim * lim) u.left = true;
           continue;
         }
         if (c.owner === u.owner && c !== u.target) continue;       // свои единицы пролетают сквозь свои клетки
-        if (dc <= c.r) { u.target = c; u.arrived = true; break; }
+        if (dc2 <= c.r * c.r) { u.target = c; u.arrived = true; break; }
       }
     }
 
     // бои в полёте: встретившиеся единицы разных цветов уничтожают друг друга
-    const G = UR * 2, grid = new Map();
-    const key = (x, y) => x + ',' + y;
+    const G = UR * 2, G2 = G * G, grid = new Map();
     for (const u of squads) {
       if (u.arrived) continue;
-      const k = key(Math.floor(u.x / G), Math.floor(u.y / G));
-      (grid.get(k) || grid.set(k, []).get(k)).push(u);
+      const k = Math.floor(u.x / G) * 100003 + Math.floor(u.y / G);
+      const l = grid.get(k);
+      if (l) l.push(u); else grid.set(k, [u]);
     }
     for (const u of squads) {
       if (u.arrived || u.dead) continue;
       const gx = Math.floor(u.x / G), gy = Math.floor(u.y / G);
       outer:
       for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
-        const lst = grid.get(key(gx + dx, gy + dy));
+        const lst = grid.get((gx + dx) * 100003 + gy + dy);
         if (!lst) continue;
         for (const v of lst) {
           if (v.dead || v.owner === u.owner) continue;
-          if (Math.hypot(u.x - v.x, u.y - v.y) < G) {
+          const ex = u.x - v.x, ey = u.y - v.y;
+          if (ex * ex + ey * ey < G2) {
             u.dead = v.dead = true;
-            burst((u.x + v.x) / 2, (u.y + v.y) / 2, Math.random() * 6.28, 6.28, 5, '255,255,255', 70, .35);
+            if (fx.length < 250) burst((u.x + v.x) / 2, (u.y + v.y) / 2, Math.random() * 6.28, 6.28, 3, '255,255,255', 70, .35);
             break outer;
           }
         }
@@ -685,6 +698,7 @@
     }
     for (const u of squads) if (u.arrived && !u.dead) arrive(u);
     squads = squads.filter(u => !u.arrived && !u.dead);
+    incCache = null;
 
     if (state === 'play') {
       for (const B of BOTS) {
@@ -712,13 +726,25 @@
   }
 
   // ---------- бот ----------
-  const incoming = (cell, owner) => squads.reduce((a, s) => a + (s.target === cell && s.owner === owner ? 1 : 0), 0)
+  let incCache = null;                                   // единицы в полёте: цель -> счётчики по владельцам (пересчитывается раз за кадр)
+  function flying() {
+    if (!incCache) {
+      incCache = { to: new Map(), own: [0, 0, 0, 0] };
+      for (const s of squads) {
+        let a = incCache.to.get(s.target);
+        if (!a) incCache.to.set(s.target, a = [0, 0, 0, 0]);
+        a[s.owner]++; incCache.own[s.owner]++;
+      }
+    }
+    return incCache;
+  }
+  const incoming = (cell, owner) => (flying().to.get(cell) || [0, 0, 0, 0])[owner]
     + cells.reduce((a, c) => a + (c.owner === owner ? c.orders.reduce((x, o) => x + (o.target === cell ? o.remaining : 0), 0) : 0), 0);
   const travel = (a, b) => Math.max(0, (dist(a, b) - b.r) / SPEED);
   
 
   const hostileIn = (cell, B) => [1, 2, 3].reduce((a, o) => a + (o === B ? 0 : incoming(cell, o)), 0);
-  const strengthOf = o => cells.reduce((a, c) => a + (c.owner === o ? c.units : 0), 0) + squads.reduce((a, u) => a + (u.owner === o ? 1 : 0), 0);
+  const strengthOf = o => cells.reduce((a, c) => a + (c.owner === o ? c.units : 0), 0) + flying().own[o];
 
   // единицы не пролетают сквозь клетки: возвращает клетку, которая перекроет путь от src к t
   function pathBlocker(src, t) {
@@ -1155,15 +1181,38 @@
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     for (const c of cells) if (inView(c.x, c.y, c.r + 80)) drawCell(c, now);
 
-    // летящие единицы: светящиеся шарики с хвостом
-    for (const u of squads) {
-      if (!inView(u.x, u.y, 40)) continue;
-      const col = u.owner === 1 ? '47,140,255' : u.owner === 2 ? '255,59,59' : '47,224,127';
-      if (u.dx !== undefined && squads.length < 500) {
-        ctx.strokeStyle = 'rgba(' + col + ',.35)'; ctx.lineWidth = 3.5; ctx.lineCap = 'round';
-        ctx.beginPath(); ctx.moveTo(u.x, u.y); ctx.lineTo(u.x - u.dx * 14, u.y - u.dy * 14); ctx.stroke();
+    // летящие единицы: все единицы одного цвета выводятся разом (один путь и одна заливка), число единиц почти не влияет на скорость
+    {
+      const vx0 = cam.x - 30, vy0 = cam.y - 30, vx1 = cam.x + innerWidth / zoom + 30, vy1 = cam.y + innerHeight / zoom + 30;
+      const fancy = squads.length < 1500;
+      for (let o = 1; o <= 3; o++) {
+        const col = o === 1 ? '47,140,255' : o === 2 ? '255,59,59' : '47,224,127';
+        const core = o === 1 ? '#bfe0ff' : o === 2 ? '#ffc4c4' : '#c8fbe0';
+        let any = false;
+        if (fancy) {                                     // хвосты и свечение
+          ctx.beginPath();
+          for (const u of squads) {
+            if (u.owner !== o || u.x < vx0 || u.x > vx1 || u.y < vy0 || u.y > vy1) continue;
+            any = true;
+            ctx.moveTo(u.x, u.y); ctx.lineTo(u.x - (u.dx || 0) * 14, u.y - (u.dy || 0) * 14);
+          }
+          if (!any) continue;
+          ctx.strokeStyle = 'rgba(' + col + ',.35)'; ctx.lineWidth = 3.5; ctx.lineCap = 'round'; ctx.stroke();
+          ctx.beginPath();
+          for (const u of squads) {
+            if (u.owner !== o || u.x < vx0 || u.x > vx1 || u.y < vy0 || u.y > vy1) continue;
+            ctx.moveTo(u.x + 8, u.y); ctx.arc(u.x, u.y, 8, 0, 6.2832);
+          }
+          ctx.fillStyle = 'rgba(' + col + ',.22)'; ctx.fill();
+        }
+        ctx.beginPath();
+        for (const u of squads) {
+          if (u.owner !== o || u.x < vx0 || u.x > vx1 || u.y < vy0 || u.y > vy1) continue;
+          if (fancy) { ctx.moveTo(u.x + 3.4, u.y); ctx.arc(u.x, u.y, 3.4, 0, 6.2832); }
+          else ctx.rect(u.x - 3, u.y - 3, 6, 6);
+        }
+        ctx.fillStyle = fancy ? core : 'rgb(' + col + ')'; ctx.fill();
       }
-      ctx.drawImage(sprites[u.owner], u.x - 11, u.y - 11, 22, 22);
     }
     drawFx();
     if (now - miniT > .12) { miniT = now; drawMini(); }
@@ -1261,9 +1310,11 @@
       g.fillStyle = col;
       g.beginPath(); g.arc(12 + c.x * sx, 12 + c.y * sy, 1.6 + c.size / 22, 0, Math.PI * 2); g.fill();
     }
-    for (const u of squads) {
-      g.fillStyle = u.owner === 1 ? '#8cc8ff' : u.owner === 2 ? '#ff9a9a' : '#b4f7d2';
-      g.fillRect(12 + u.x * sx - 1, 12 + u.y * sy - 1, 2, 2);
+    for (let o = 1; o <= 3; o++) {
+      g.beginPath();
+      for (const u of squads) if (u.owner === o) g.rect(12 + u.x * sx - 1, 12 + u.y * sy - 1, 2, 2);
+      g.fillStyle = o === 1 ? '#8cc8ff' : o === 2 ? '#ff9a9a' : '#b4f7d2';
+      g.fill();
     }
     // прямоугольник того, что сейчас видно на экране
     g.strokeStyle = 'rgba(255,255,255,.85)'; g.lineWidth = 1.5;
@@ -1277,7 +1328,7 @@
     const stat = o => {
       let c = 0, u = 0;
       for (const x of cells) if (x.owner === o) { c++; u += Math.floor(x.units); }
-      for (const s of squads) if (s.owner === o) u += 1;
+      u += flying().own[o];
       return [c, u];
     };
     const [bc, bu] = stat(1), [rc, ru] = stat(2), [gc, gu] = stat(3);
