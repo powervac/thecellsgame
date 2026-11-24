@@ -582,7 +582,7 @@
     else if (c.units >= 1) { c.units -= 1; hitFx(u, c, 'hit'); }
     else {
       if (c.bonus) {                                              // бонусная клетка: захватчик получает ускорение на 60 секунд
-        ({ fly: boostFly, prod: boostProd, move: boost })[c.bonus][u.owner] = gameT + BOOST_TIME;
+        { const T = { fly: boostFly, prod: boostProd, move: boost }[c.bonus]; if (T[u.owner] !== Infinity) T[u.owner] = gameT + BOOST_TIME; }   // бессрочный тестовый бонус не перезаписываем
         fx.push({ k: 'wave', x: c.x, y: c.y, col: BONUS[c.bonus].rgb, t: 0, life: 1.1, r0: c.r, r1: c.r + 160 });
         c.bonus = false;
       }
