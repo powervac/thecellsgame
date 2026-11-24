@@ -17,7 +17,8 @@
   #hud { flex:1; display:flex; flex-wrap:wrap; align-items:center; gap:2px 26px; font-size:clamp(16px,2vw,28px); font-weight:700; line-height:1.25;
     font-variant-numeric:tabular-nums; pointer-events:none; min-width:0; }
   #hud .sep { display:none; }
-  #hud .who { display:flex; align-items:center; gap:8px; white-space:nowrap; }
+  #hud .who { display:flex; align-items:center; gap:8px; white-space:nowrap; padding:1px 8px; border:2px solid transparent; border-radius:10px; }
+  #hud .who.lead { border-color:#ffd740; background:rgba(255,215,64,.12); box-shadow:0 0 12px rgba(255,215,64,.45); }   /* лидер партии */
   #hud b { font-weight:700; }
   #bal { flex:none; padding:8px 18px; border-radius:14px; font-size:clamp(14px,1.5vw,22px); font-weight:800; line-height:1.15; text-align:center; display:none; pointer-events:none; color:#fff; background:rgba(20,110,60,.92); border:2px solid #3ddc84; box-shadow:0 0 18px rgba(61,220,132,.7); animation:balp 1.4s ease-in-out infinite; }
   #bal.on { display:block; }
@@ -1785,10 +1786,11 @@
     const h = $('hud'); let html = '';
     for (let o = 1; o <= BOTS.length + 1; o++) {
       if (o > 1) html += '<span class="sep"></span>';
-      html += '<span class="who"><span class="dot" style="background:' + MCOL[o] + ';box-shadow:0 0 8px ' + MCOL[o] + '"></span>' + (o === 1 ? 'Вы' : PNAME[o]) + ': <b id="c' + o + '">0</b> кл. / <b id="u' + o + '">0</b></span>';
+      html += '<span class="who" id="who' + o + '"><span class="dot" style="background:' + MCOL[o] + ';box-shadow:0 0 8px ' + MCOL[o] + '"></span>' + (o === 1 ? 'Вы' : PNAME[o]) + ': <b id="c' + o + '">0</b> кл. / <b id="u' + o + '">0</b></span>';
     }
     h.classList.toggle('many', BOTS.length > 2);
     h.innerHTML = html;
+    hudLead = 0;
     for (const k in txtCache) delete txtCache[k];
   }
 
@@ -1815,6 +1817,7 @@
     if (lp > 0) setTxt('boostPT', leftTxt(lp));
   }
 
+  let hudLead = 0;
   function updateHud() {
     updateBoostHud();
     const stat = o => {
@@ -1823,7 +1826,16 @@
       u += flying().own[o];
       return [c, u];
     };
-    for (let o = 1; o <= BOTS.length + 1; o++) { const [c, u] = stat(o); setTxt('c' + o, c); setTxt('u' + o, u); }
+    let lead = 0, best = [-1, -1];
+    for (let o = 1; o <= BOTS.length + 1; o++) {
+      const [c, u] = stat(o); setTxt('c' + o, c); setTxt('u' + o, u);
+      if (c > best[0] || (c === best[0] && u > best[1])) { best = [c, u]; lead = o; }   // лидер — у кого больше клеток, при равенстве — больше единиц
+    }
+    if (lead !== hudLead) {
+      if (hudLead) { const e = $('who' + hudLead); if (e) e.classList.remove('lead'); }
+      const e = $('who' + lead); if (e) e.classList.add('lead');
+      hudLead = lead;
+    }
   }
 
   let hudT = 0;
