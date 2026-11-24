@@ -673,7 +673,7 @@
     // выпуск единиц цепочкой
     for (const c of cells) {
       if (!c.orders.length) { c.acc = 0; continue; }
-      const bm = balanceOn && c.owner === 1 && c.orders.every(o => o.target.owner === 1 || o.target.recap > gameT) ? 9 * Math.min(50, Math.max(1, c.units / balMean)) : 1;   // в режиме выравнивания обмен между своими клетками в 9 раз быстрее обычной высылки
+      const bm = balanceOn && c.owner === 1 && c.orders.every(o => o.target.owner === 1 || o.target.recap > gameT) ? 9 * Math.min(50, Math.max(1, c.units / (balK * c.size))) : 1;   // в режиме выравнивания обмен между своими клетками в 9 раз быстрее обычной высылки
       c.acc = Math.min(c.acc + dt * launchRate(c) * bm, 150);
       while (c.acc >= 1 && c.orders.length) {
         if (c.units < 1) break;
@@ -761,23 +761,23 @@
   }
 
   // режим F: свои клетки отправляют излишки единиц тем, у кого их меньше среднего
-  let balanceOn = false, balT = 0, balMean = 1;   // balMean: среднее число единиц в своих клетках; чем сильнее клетка выше среднего, тем быстрее она отдаёт
+  let balanceOn = false, balT = 0, balK = 1;   // balK: единиц на единицу размера в среднем по своим клеткам (цель клетки ∝ размеру); чем сильнее клетка выше своей цели, тем быстрее она отдаёт
   function balanceStep() {
     const own = cells.filter(c => c.owner === 1);
     if (own.length < 2) return;
     const fut = new Map();
     for (const c of own) fut.set(c, c.units - reserved(c) + incoming(c, 1));
-    let tot = 0; for (const c of own) tot += fut.get(c);
-    const m = tot / own.length;
-    balMean = Math.max(1, m);
-    const give = own.slice().sort((a, b) => fut.get(b) - fut.get(a));
-    const need = own.filter(c => fut.get(c) < m - 1);
+    let tot = 0, sz = 0; for (const c of own) { tot += fut.get(c); sz += c.size; }
+    balK = Math.max(.01, tot / sz);                                 // единиц на единицу размера: цель клетки = balK * размер
+    const goal = c => balK * c.size;
+    const give = own.slice().sort((a, b) => (fut.get(b) - goal(b)) - (fut.get(a) - goal(a)));
+    const need = own.filter(c => fut.get(c) < goal(c) - 1);
     for (const c of cells) if (c.owner > 1 && c.recap > gameT) need.push(c);   // недавно потерянные клетки: ещё 10 секунд посылаем туда единицы, чтобы вернуть
     for (const d of give) {
       need.sort((a, b) => dist(a, d) - dist(b, d));
       for (const r of need) {
         const lost = r.owner !== 1;
-        const surplus = lost ? Math.min(avail(d), fut.get(d) * .5) : fut.get(d) > m + 1 ? Math.min(fut.get(d) - m, avail(d)) : 0, want = lost ? r.units + 2 - incoming(r, 1) : m - fut.get(r);
+        const surplus = lost ? Math.min(avail(d), fut.get(d) * .5) : fut.get(d) > goal(d) + 1 ? Math.min(fut.get(d) - goal(d), avail(d)) : 0, want = lost ? r.units + 2 - incoming(r, 1) : goal(r) - fut.get(r);
         if (surplus < 1 || r === d) continue;
         if (want < 1) continue;
         const n = Math.floor(Math.min(surplus, want));
