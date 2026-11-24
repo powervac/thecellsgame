@@ -25,6 +25,8 @@
   #boost.on { display:block; }
   #boostF { flex:none; padding:8px 18px; border-radius:14px; font-size:clamp(14px,1.5vw,22px); font-weight:800; line-height:1.15; text-align:center; display:none; pointer-events:none; color:#fff; background:rgba(130,30,120,.92); border:2px solid #ff5cf0; box-shadow:0 0 18px rgba(255,92,240,.7); }
   #boostF.on { display:block; }
+  #boostP { flex:none; padding:8px 18px; border-radius:14px; font-size:clamp(14px,1.5vw,22px); font-weight:800; line-height:1.15; text-align:center; display:none; pointer-events:none; color:#fff; background:rgba(30,110,20,.92); border:2px solid #7dff4d; box-shadow:0 0 18px rgba(125,255,77,.7); }
+  #boostP.on { display:block; }
   #pause { top:50%; left:50%; transform:translate(-50%,-50%); padding:16px 36px; font-size:28px; font-weight:800; display:none; pointer-events:none; color:#fff; background:rgba(20,40,110,.92); box-shadow:0 0 30px rgba(80,140,255,.7); white-space:nowrap; }
   #pause.on { display:block; }
   @keyframes balp { 50% { box-shadow:0 0 40px rgba(61,220,132,1); } }
@@ -74,7 +76,7 @@
 
 <button id="restart" class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 3v5h-5"/></svg>Заново</button>
 <button id="mute" class="pill" title="Звук"><svg class="on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg><svg class="off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="m16 9 5 6M21 9l-5 6"/></svg></button>
-<div id="bar"><div id="hud"></div><div id="boostF">🚀 ПОЛЁТ ×3<br><small id="boostFT"></small></div><div id="boost">⚡ УСКОРЕНИЕ ×3<br><small id="boostT"></small></div><div id="bal">⚖ ВЫРАВНИВАНИЕ ВКЛ<br><small style="font-weight:600;opacity:.85">F — выключить</small></div><canvas id="mini" width="400" height="240"></canvas></div>
+<div id="bar"><div id="hud"></div><div id="boostP">⚙️ ПРОИЗВОДСТВО ×3<br><small id="boostPT"></small></div><div id="boostF">🚀 ПОЛЁТ ×3<br><small id="boostFT"></small></div><div id="boost">⚡ УСКОРЕНИЕ ×3<br><small id="boostT"></small></div><div id="bal">⚖ ВЫРАВНИВАНИЕ ВКЛ<br><small style="font-weight:600;opacity:.85">F — выключить</small></div><canvas id="mini" width="400" height="240"></canvas></div>
 <div id="overlay">
   <div class="card">
     <h1 id="title">The Cells Game</h1>
@@ -329,10 +331,12 @@
   const START_SIZE = 20;                  // размер стартовых клеток игроков
   const radiusOf = size => 14 + size * 0.6;   // 10 -> 20 px, 50 -> 44 px
   const MOVE_K = 600;                     // скорость движения клетки = MOVE_K / размер (px/с)
+  const BONUS = { move: { col: '#ffd740', rgb: '255,214,64', glyph: '⚡' }, fly: { col: '#ff5cf0', rgb: '255,92,240', glyph: '🚀' }, prod: { col: '#7dff4d', rgb: '125,255,77', glyph: '⚙️' } };
+  const boostProd = {};                   // ускорение производства единиц
   const boost = {}, boostFly = {};        // ускорение клеток / ускорение летящих единиц                       // владелец -> игровое время, до которого его клетки движутся втрое быстрее
   const BOOST_TIME = 60, BOOST_K = 3;
   const moveSpeed = c => MOVE_K / 10 * (boost[c.owner] > gameT ? BOOST_K : 1);     // все клетки движутся со скоростью самой маленькой (размер 10): 60 px/с
-  const rate = c => c.size / 10;          // прирост единиц в секунду: пропорционально размеру
+  const rate = c => c.size / 10 * (boostProd[c.owner] > gameT ? 3 : 1);          // прирост единиц в секунду: пропорционально размеру
   let SPEED = MAP.SPEED;         // скорость единицы, px/с
   const LAUNCH = 4;              // единиц в секунду, которые выпускает клетка размера 10
   const launchRate = c => LAUNCH * c.size / 10;   // пропорционально размеру: клетка 50 выпускает в 5 раз быстрее клетки 10
@@ -480,7 +484,7 @@
       if (list.length === N) {
         list.forEach((c, i) => c.id = i);
         const pool = list.filter(c => !c.owner);                       // бонусные клетки: захват даёт ускорение движения
-        for (let k = 0; k < MAP.bonus * 2 && pool.length; k++) pool.splice(Math.floor(Math.random() * pool.length), 1)[0].bonus = k < MAP.bonus ? 'move' : 'fly';   // move: быстрые клетки, fly: быстрые единицы
+        for (let k = 0; k < MAP.bonus * 3 && pool.length; k++) pool.splice(Math.floor(Math.random() * pool.length), 1)[0].bonus = ['move', 'fly', 'prod'][Math.floor(k / MAP.bonus)];   // move: быстрые клетки, fly: быстрые единицы
         return list;
       }
     }
@@ -510,7 +514,7 @@
   function applyMap() {
     MAP = MAPS[mapMode]; W = MAP.W; H = MAP.H; N = MAP.N; SPEED = MAP.SPEED;
     BOTS = [2, 3, 4, 5, 6].slice(0, MAP.bots);
-    balanceOn = false; gameT = 0; for (const k in boost) delete boost[k]; for (const k in boostFly) delete boostFly[k]; $('bal').classList.remove('on'); setPause(false);
+    balanceOn = false; gameT = 0; for (const k in boost) delete boost[k]; for (const k in boostFly) delete boostFly[k]; for (const k in boostProd) delete boostProd[k]; $('bal').classList.remove('on'); setPause(false);
     buildHud();
     resize();                                         // пересчитать допустимый масштаб
   }
@@ -564,8 +568,8 @@
     else if (c.units >= 1) { c.units -= 1; hitFx(u, c, 'hit'); }
     else {
       if (c.bonus) {                                              // бонусная клетка: захватчик получает ускорение на 60 секунд
-        (c.bonus === 'fly' ? boostFly : boost)[u.owner] = gameT + BOOST_TIME;
-        fx.push({ k: 'wave', x: c.x, y: c.y, col: c.bonus === 'fly' ? '255,92,240' : '255,220,60', t: 0, life: 1.1, r0: c.r, r1: c.r + 160 });
+        ({ fly: boostFly, prod: boostProd, move: boost })[c.bonus][u.owner] = gameT + BOOST_TIME;
+        fx.push({ k: 'wave', x: c.x, y: c.y, col: BONUS[c.bonus].rgb, t: 0, life: 1.1, r0: c.r, r1: c.r + 160 });
         c.bonus = false;
       }
       if (c.owner === 1 && balanceOn) c.recap = gameT + 10;      // враг отбил клетку у выравнивания: 10 секунд считаем её своей и пытаемся вернуть
@@ -1351,12 +1355,12 @@
     if (c.bonus) {                                                  // золотое кольцо и молния
       const k = 0.5 + 0.5 * Math.sin(now * 4);
       ctx.save();
-      const fly = c.bonus === 'fly';
-      ctx.strokeStyle = (fly ? 'rgba(255,92,240,' : 'rgba(255,214,64,') + (.65 + .35 * k) + ')'; ctx.lineWidth = 4; ctx.shadowColor = fly ? '#ff5cf0' : '#ffd740'; ctx.shadowBlur = 14;
+      const B = BONUS[c.bonus];
+      ctx.strokeStyle = 'rgba(' + B.rgb + ',' + (.65 + .35 * k) + ')'; ctx.lineWidth = 4; ctx.shadowColor = B.col; ctx.shadowBlur = 14;
       ctx.beginPath(); ctx.arc(x, y, r + 5 + 3 * k, 0, Math.PI * 2); ctx.stroke();
       ctx.restore();
       ctx.font = '700 ' + Math.round(Math.max(14, r * .7)) + 'px sans-serif';
-      ctx.fillStyle = fly ? '#ff5cf0' : '#ffd740'; ctx.fillText(fly ? '🚀' : '⚡', x, y - r - 12 - 3 * k);
+      ctx.fillStyle = B.col; ctx.fillText(B.glyph, x, y - r - 12 - 3 * k);
     }
 
     // число единиц (у совсем мелких кружков при сильном отдалении не рисуем)
@@ -1416,7 +1420,7 @@
     g.clearRect(0, 0, w, h);
     const sx = (w - 24) / W, sy = (h - 24) / H;
     for (const c of cells) {
-      const col = c.bonus ? (c.bonus === 'fly' ? '#ff5cf0' : '#ffd740') : MCOL[c.owner] || 'rgba(205,220,255,.75)';
+      const col = c.bonus ? BONUS[c.bonus].col : MCOL[c.owner] || 'rgba(205,220,255,.75)';
       g.fillStyle = col;
       g.beginPath(); g.arc(12 + c.x * sx, 12 + c.y * sy, 1.6 + c.size / 22, 0, Math.PI * 2); g.fill();
     }
@@ -1452,6 +1456,9 @@
     const lf = Math.max(0, boostFly[1] - gameT) || 0;
     $('boostF').classList.toggle('on', lf > 0);
     if (lf > 0) setTxt('boostFT', 'ещё ' + Math.ceil(lf) + ' с');
+    const lp = Math.max(0, boostProd[1] - gameT) || 0;
+    $('boostP').classList.toggle('on', lp > 0);
+    if (lp > 0) setTxt('boostPT', 'ещё ' + Math.ceil(lp) + ' с');
   }
 
   function updateHud() {
