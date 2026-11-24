@@ -17,6 +17,8 @@
   #hud .sep { width:1px; height:24px; background:var(--line); margin:0 18px; }
   #hud .who { display:flex; align-items:center; gap:10px; }
   #hud b { font-weight:700; }
+  #bal { top:72px; left:22px; padding:6px 14px; font-size:13px; display:none; pointer-events:none; color:#8cc8ff; }
+  #bal.on { display:block; }
   #hud.many { font-size:14px; padding:0 14px; } #hud.many .sep { margin:0 9px; } #hud.many .who { gap:6px; } #hud.many .dot { width:13px; height:13px; }
   .dot { width:20px; height:20px; border-radius:50%; display:inline-block; }
   .dot.b { background:radial-gradient(circle at 35% 30%, #8cc4ff, #1f6bff 70%); box-shadow:0 0 12px 2px rgba(47,140,255,.8); }
@@ -59,6 +61,7 @@
 <body>
 <canvas id="c"></canvas>
 <div id="hud" class="pill"></div>
+<div id="bal" class="pill">Баланс: выравнивание единиц (F)</div>
 <button id="restart" class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 3v5h-5"/></svg>Заново</button>
 <button id="mute" class="pill" title="Звук"><svg class="on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg><svg class="off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="m16 9 5 6M21 9l-5 6"/></svg></button>
 <canvas id="mini" width="400" height="240"></canvas>
@@ -483,6 +486,7 @@
   function applyMap() {
     MAP = MAPS[mapMode]; W = MAP.W; H = MAP.H; N = MAP.N; SPEED = MAP.SPEED;
     BOTS = [2, 3, 4, 5, 6].slice(0, MAP.bots);
+    balanceOn = false; $('bal').classList.remove('on');
     buildHud();
     resize();                                         // пересчитать допустимый масштаб
   }
@@ -713,6 +717,7 @@
     squads = squads.filter(u => !u.arrived && !u.dead);
     incCache = null;
 
+    if (state === 'play' && balanceOn && (balT -= dt) <= 0) { balT = .4; balanceStep(); }
     if (state === 'play') {
       for (const B of BOTS) {
         botTimer[B] -= dt;
@@ -721,6 +726,31 @@
         if (botMoveTimer[B] <= 0) { botMoveTimer[B] = DIFF[diff].moveEvery * (0.7 + Math.random() * 0.6); botMove(B); }
       }
       checkWin();
+    }
+  }
+
+  // режим F: свои клетки отправляют излишки единиц тем, у кого их меньше среднего
+  let balanceOn = false, balT = 0;
+  function balanceStep() {
+    const own = cells.filter(c => c.owner === 1);
+    if (own.length < 2) return;
+    const fut = new Map();
+    for (const c of own) fut.set(c, c.units - reserved(c) + incoming(c, 1));
+    let tot = 0; for (const c of own) tot += fut.get(c);
+    const m = tot / own.length;
+    const give = own.filter(c => fut.get(c) > m + 1).sort((a, b) => fut.get(b) - fut.get(a));
+    const need = own.filter(c => fut.get(c) < m - 1);
+    for (const d of give) {
+      need.sort((a, b) => dist(a, d) - dist(b, d));
+      for (const r of need) {
+        const surplus = Math.min(fut.get(d) - m, avail(d)), want = m - fut.get(r);
+        if (surplus < 1) break;
+        if (want < 1) continue;
+        const n = Math.floor(Math.min(surplus, want));
+        if (n < 1) continue;
+        const sent = sendN(d, r, n);
+        fut.set(d, fut.get(d) - sent); fut.set(r, fut.get(r) + sent);
+      }
     }
   }
 
@@ -924,6 +954,11 @@
     if (e.key === 'Escape') { moveSel = new Set(); sel = new Set(); tgts = []; box = null; }   // снять выделение со всех
     if (e.code === 'KeyA' && !e.ctrlKey && !e.metaKey && !e.altKey && state === 'play') {   // A: выделить все свои клетки
       moveSel = new Set(cells.filter(c => c.owner === 1));
+      e.preventDefault();
+    }
+    if (e.code === 'KeyF' && !e.ctrlKey && !e.metaKey && !e.altKey && state === 'play') {   // F: режим выравнивания единиц между своими клетками
+      balanceOn = !balanceOn; balT = 0;
+      $('bal').classList.toggle('on', balanceOn);
       e.preventDefault();
     }
     if (e.code === 'KeyS' && !e.ctrlKey && !e.metaKey && !e.altKey && state === 'play') {   // S: остановить высылку юнитов у выбранных клеток
