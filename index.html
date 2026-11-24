@@ -29,6 +29,8 @@
   #boostP.on { display:block; }
   #pause { top:50%; left:50%; transform:translate(-50%,-50%); padding:16px 36px; font-size:28px; font-weight:800; display:none; pointer-events:none; color:#fff; background:rgba(20,40,110,.92); box-shadow:0 0 30px rgba(80,140,255,.7); white-space:nowrap; }
   #pause.on { display:block; }
+  #perf { position:fixed; left:12px; top:12px; margin:0; padding:8px 12px; background:rgba(0,0,0,.72); color:#9fe89f; font:13px/1.35 Consolas, monospace; border-radius:8px; pointer-events:none; z-index:9; display:none; white-space:pre; }
+  #perf.on { display:block; }
   @keyframes balp { 50% { box-shadow:0 0 40px rgba(61,220,132,1); } }
   #hud.many { } #hud.many .sep { margin:0 9px; } #hud.many .who { gap:6px; } #hud .dot { width:.85em; height:.85em; }
   .dot { width:20px; height:20px; border-radius:50%; display:inline-block; }
@@ -80,6 +82,7 @@
 <canvas id="bg" style="pointer-events:none"></canvas>
 <canvas id="c"></canvas>
 
+<pre id="perf"></pre>
 <div id="pause" class="pill">⏸ ПАУЗА — P, чтобы продолжить</div>
 
 <button id="restart" class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 3v5h-5"/></svg>Заново</button>
@@ -306,7 +309,7 @@
   let fx = [];                                   // визуальные эффекты: кольца, искры, волны
 
   function burst(x, y, ang, spread, n, col, spd, life) {
-    for (let i = 0; i < n && fx.length < 400; i++) {
+    for (let i = 0; i < n && fx.length < fxCap(); i++) {
       const a = ang + (Math.random() - .5) * spread;
       const v = spd * (.5 + Math.random() * .8);
       fx.push({ k: 'p', x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, col, t: 0, life: life * (.7 + Math.random() * .6), r: 1.6 + Math.random() * 1.6 });
@@ -319,7 +322,7 @@
     const ang = Math.atan2(u.y - c.y, u.x - c.x);
     const px = c.x + Math.cos(ang) * c.r, py = c.y + Math.sin(ang) * c.r;
     if (kind === 'capture') sfxExplode(c); else sfxHit(kind, c);
-    if (fx.length < 400) fx.push({ k: 'ring', x: px, y: py, col, t: 0, life: .38, r0: 2, r1: kind === 'join' ? 10 : 17 });
+    if (fx.length < fxCap()) fx.push({ k: 'ring', x: px, y: py, col, t: 0, life: .38, r0: 2, r1: kind === 'join' ? 10 : 17 });
     if (kind === 'join') {
       burst(px, py, ang + Math.PI, 1.4, 2, col, 40, .35);
       c.flash = Math.min(1, c.flash + .15);
@@ -437,8 +440,13 @@
   };
 
   let VH = innerHeight;               // высота игрового поля: весь экран за вычетом нижней панели (~10%)
+  // автокачество: 0 — полное, 3 — самое лёгкое. Уровень меняется сам по реальному FPS
+  const QSCALE = [1, .8, .65, .5];
+  let qLevel = 0;
+  try { const q = +localStorage.getItem('cells-q'); if (q >= 0 && q <= 3) qLevel = q; } catch (e) {}
+  const fxCap = () => [400, 150, 60, 0][qLevel];
   function resize() {
-    dpr = Math.min(1.5, window.devicePixelRatio || 1);   // на экранах высокой плотности не рисуем в 2–3x: пикселей в 2–4 раза меньше, а разница почти не видна
+    dpr = Math.min(1.5, window.devicePixelRatio || 1) * QSCALE[qLevel];   // автокачество: при низком FPS холст рисуется в меньшем разрешении   // на экранах высокой плотности не рисуем в 2–3x: пикселей в 2–4 раза меньше, а разница почти не видна
     const barH = Math.max(80, Math.round(innerHeight * .1));
     document.documentElement.style.setProperty('--barH', barH + 'px');
     VH = innerHeight - barH;
@@ -1177,6 +1185,11 @@
       moveSel = selAllSet = new Set(cells.filter(c => c.owner === 1));
       e.preventDefault();
     }
+    if (e.code === 'Backquote') {                         // ` (Ё): показать/скрыть замеры производительности
+      perf.show = !perf.show; $('perf').classList.toggle('on', perf.show);
+      try { localStorage.setItem('cells-perf', perf.show ? '1' : '0'); } catch (e2) {}
+      e.preventDefault();
+    }
     if ((e.code === 'KeyP' || e.code === 'Pause') && !e.ctrlKey && !e.metaKey && !e.altKey && state === 'play') { setPause(!paused); e.preventDefault(); }
     if (e.code === 'KeyF' && !e.ctrlKey && !e.metaKey && !e.altKey && state === 'play') {   // F: режим выравнивания единиц между своими клетками
       balanceOn = !balanceOn; balT = 0;
@@ -1394,7 +1407,7 @@
     ctx.clearRect(0, 0, canvas.width, canvas.height);   // игровой слой прозрачный, фон виден из-под него
     // мигающие звёзды: у каждой своя скорость и фаза, яркие слегка «лучатся»
     {                                                    // звёзды пачками: 6 уровней яркости — 6 заливок и 6 обводок лучей на весь экран
-      const SL = 6, dots = [], rays = [];
+      const SL = qLevel >= 2 ? 0 : 6, dots = [], rays = [];
       for (let i = 0; i < SL; i++) { dots.push(new Path2D()); rays.push(new Path2D()); }
       for (const st of stars) {
         const k = 0.5 + 0.5 * Math.sin(now * st.s + st.p);
@@ -1507,7 +1520,7 @@
     // летящие единицы: все единицы одного цвета выводятся разом (один путь и одна заливка), число единиц почти не влияет на скорость
     {
       const vx0 = cam.x - 30, vy0 = cam.y - 30, vx1 = cam.x + innerWidth / zoom + 30, vy1 = cam.y + VH / zoom + 30;
-      const fancy = squads.length < 600;                // при большом числе единиц — простые квадраты без хвостов и свечения
+      const fancy = squads.length < 600 && qLevel === 0;                // при большом числе единиц — простые квадраты без хвостов и свечения
       for (let o = 1; o <= BOTS.length + 1; o++) {
         const col = UCOL[o], core = UCORE[o];
         let any = false;
@@ -1728,6 +1741,39 @@
     for (let o = 1; o <= BOTS.length + 1; o++) { const [c, u] = stat(o); setTxt('c' + o, c); setTxt('u' + o, u); }
   }
 
+  let hudT = 0;
+  const perf = { frames: 0, upd: 0, drw: 0, hud: 0, worst: 0, t0: 0, fps: 60, lowS: 0, highS: 0, show: false };
+  try { perf.show = localStorage.getItem('cells-perf') === '1'; } catch (e) {}
+  function setQuality(q) {
+    qLevel = q;
+    try { localStorage.setItem('cells-q', q); } catch (e) {}
+    resize(); buildBg();
+  }
+  function perfTick(t, u, d, h) {
+    perf.frames++; perf.upd += u; perf.drw += d; perf.hud += h; perf.worst = Math.max(perf.worst, u + d + h);
+    if (!perf.t0) perf.t0 = t;
+    if (t - perf.t0 < 1000) return;
+    const sec = (t - perf.t0) / 1000, n = perf.frames;
+    perf.fps = n / sec;
+    const work = (perf.upd + perf.drw + perf.hud) / n;
+    if (state === 'play' && !paused && !document.hidden) {
+      // автокачество: 2 секунды подряд ниже 40 FPS — легче; 5 секунд подряд выше 57 FPS при запасе по времени — снова лучше
+      if (perf.fps < 40) { perf.lowS++; perf.highS = 0; } else if (perf.fps > 57 && work < 7) { perf.highS++; perf.lowS = 0; } else { perf.lowS = perf.highS = 0; }
+      if (perf.lowS >= 2 && qLevel < 3) { setQuality(qLevel + 1); perf.lowS = 0; }
+      if (perf.highS >= 5 && qLevel > 0) { setQuality(qLevel - 1); perf.highS = 0; }
+    }
+    if (perf.show) {
+      const flying = squads.reduce((a, s) => a + s.n, 0);
+      $('perf').textContent =
+        'FPS ' + perf.fps.toFixed(0) + '   качество ' + (3 - qLevel) + '/3 (холст ' + canvas.width + '×' + canvas.height + ')\n' +
+        'логика ' + (perf.upd / n).toFixed(1) + ' мс   рисование ' + (perf.drw / n).toFixed(1) + ' мс   панель+звук ' + (perf.hud / n).toFixed(1) + ' мс\n' +
+        'худший кадр ' + perf.worst.toFixed(0) + ' мс\n' +
+        'клеток ' + cells.length + ' (ваших ' + cells.filter(c => c.owner === 1).length + ', едут ' + cells.filter(c => c.dest).length + ')\n' +
+        'точек в полёте ' + squads.length + ' (единиц ' + flying + ')   эффектов ' + fx.length;
+    }
+    perf.frames = 0; perf.upd = perf.drw = perf.hud = perf.worst = 0; perf.t0 = t;
+  }
+
   function frame(t) {
     const dt = Math.min(0.05, (t - last) / 1000 || 0);
     last = t;
@@ -1752,14 +1798,20 @@
         }
       }
     }
+    const t0 = performance.now();
     try { if (state === 'play' && !paused) update(dt); } catch (e) { console.error(e); }
+    const t1 = performance.now();
     try { draw(); } catch (e) { console.error(e); }
-    updateHud();
+    const t2 = performance.now();
+    if (t2 - hudT > 200) { hudT = t2; updateHud(); }          // цифры в панели — 5 раз в секунду, а не каждый кадр (меньше перерасчёта вёрстки)
     updateHum();
+    const t3 = performance.now();
+    perfTick(t, t1 - t0, t2 - t1, t3 - t2);
     requestAnimationFrame(frame);
   }
 
   BOTS = [2, 3, 4, 5, 6].slice(0, MAP.bots); buildHud();
+  $('perf').classList.toggle('on', perf.show);
   cells = genCells(); // фон для меню
   requestAnimationFrame(frame);
 
