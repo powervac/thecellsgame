@@ -995,7 +995,37 @@
   // предпочитать дешёвые захваты (малые клетки: больше клеток при меньшем риске),
   // добивать ослабленных врагов, оборонять свои клетки, оставлять резерв.
   // за один ход бот делает несколько действий: чем больше у него клеток, тем больше (на большой карте иначе он не успевает за игроком)
+  // ближайшая к клетке c чужая клетка (по сетке)
+  function nearestFoe(c, B, enemiesOnly) {
+    const g = cellGridPB(), gx = Math.floor(c.x / PG), gy = Math.floor(c.y / PG);
+    let best = null, bd = Infinity;
+    for (let R = 1; R <= 40 && !best; R *= 2) {
+      for (let ix = gx - R; ix <= gx + R; ix++) for (let iy = gy - R; iy <= gy + R; iy++) {
+        const l = g.get(ix * 10000 + iy); if (!l) continue;
+        for (const t of l) { if (t.owner === B || (enemiesOnly && !t.owner)) continue; const d = dist(c, t); if (d < bd) { bd = d; best = t; } }
+      }
+    }
+    return best ? { t: best, d: bd } : null;
+  }
+  // тыл кормит фронт: богатые клетки вдали от врагов отправляют большую часть единиц на ближайшую свою клетку у линии фронта
+  function botSupply(B) {
+    const cfg = DIFF[diff];
+    if (cfg.random) return;
+    const mine = cells.filter(c => c.owner === B);
+    if (mine.length < 4) return;
+    const info = mine.map(c => ({ c, f: nearestFoe(c, B, true) })).filter(x => x.f);   // фронт и тыл — относительно врагов, нейтральные клетки не угроза
+    const front = info.filter(x => x.f.d < 700).map(x => x.c);
+    if (!front.length) return;
+    const rear = info.filter(x => x.f.d > 1000 && (avail(x.c) >= 200 || (avail(x.c) >= 40 && !x.c.orders.length))).sort((a, b) => avail(b.c) - avail(a.c)).slice(0, diff === 'hard' ? 6 : 3);
+    for (const { c } of rear) {
+      let dst = null, dd = Infinity;
+      for (const f of front) { const d = dist(c, f); if (d < dd && !pathBlocker(c, f)) { dd = d; dst = f; } }
+      if (dst) sendN(c, dst, avail(c) * .7);
+    }
+  }
+
   function botStep(B) {
+    botSupply(B);
     const n = Math.min(14, 1 + Math.floor(cells.reduce((a, c) => a + (c.owner === B ? 1 : 0), 0) * DIFF[diff].actK));
     botQueue[B] = { n, memo: {} };                    // действия хода выполняются по кадрам (botRun), чтобы не было рывков
   }
@@ -1097,9 +1127,12 @@
       // нейтральную клетку, которую уже атакует кто-то другой, не трогаем: иначе мы лишь ослабим её для третьего
       if (t.owner === 0 && hostileIn(t, B) > 0) continue;
       // стрелять можно только из клеток, у которых путь к цели не перекрыт другой клеткой
-      const near12 = nearOwn(t, 12).map(x => x.m);
+      // стреляют не только ближайшие клетки, но и самые богатые в радиусе 2500 px: иначе крупные запасы в тылу простаивают
+      if (!memo.rich) memo.rich = mine.filter(m => avail(m) >= 20).sort((a, b) => avail(b) - avail(a)).slice(0, 24);
+      const pool = new Set(nearOwn(t, 12).map(x => x.m));
+      for (const m of memo.rich) if (pool.size < 20 && dist(m, t) < 2500 && avail(m) >= 2) pool.add(m);
       const sorted = [];
-      for (const m of near12) { if (!pathBlocker(m, t)) sorted.push(m); if (sorted.length >= 6) break; }   // ближайшие клетки, у которых свободен путь
+      for (const m of [...pool].sort((a, b) => dist(a, t) - dist(b, t))) { if (!pathBlocker(m, t)) sorted.push(m); if (sorted.length >= 10) break; }   // клетки со свободным путём, ближние первыми
       if (!sorted.length) continue;
       const tt = travel(sorted[0], t);
       const base = t.units + cfg.buffer - incoming(t, B);
@@ -1158,24 +1191,8 @@
       return;
     }
     // цели: чужие клетки (враги важнее нейтральных) и бонусы; ищем ближайшую по сетке
-    const g = cellGridPB();
-    const nearestFoe = c => {
-      let best = null, bd = Infinity;
-      for (let R = 1; R <= 40 && !best; R *= 2) {
-        const gx = Math.floor(c.x / PG), gy = Math.floor(c.y / PG);
-        for (let ix = gx - R; ix <= gx + R; ix++) for (let iy = gy - R; iy <= gy + R; iy++) {
-          const l = g.get(ix * 10000 + iy); if (!l) continue;
-          for (const t of l) {
-            if (t.owner === B) continue;
-            const d = dist(c, t) - (t.owner ? 120 : 0) - (t.bonus ? 250 : 0);   // враги и бонусы притягивают сильнее
-            if (d < bd) { bd = d; best = t; }
-          }
-        }
-      }
-      return best;
-    };
     // тыловые клетки (дальше всего от чужих) двигаем первыми
-    const cand = idle.map(c => { const t = nearestFoe(c); return { c, t, d: t ? dist(c, t) : 0 }; })
+    const cand = idle.map(c => { const f = nearestFoe(c, B), t = f && f.t; return { c, t, d: t ? dist(c, t) : 0 }; })
       .filter(x => x.t && x.d > x.c.r + x.t.r + 140)
       .sort((a, b) => b.d - a.d)
       .slice(0, n);
