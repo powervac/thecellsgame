@@ -126,10 +126,10 @@
   // режимы карты: обычная (одно поле) и большая (в 9 раз по площади, со скроллингом)
   const MAPS = {
     normal: { bots: 2, bonus: 2, W: 1200, H: 720,  N: 20,  SPEED: 150, edge: 75,  spread: 90,  greenY: 14, greenX: 1 / 6 },
-    // большие карты: ×3, ×6, ×9 по площади от прежней большой карты 3600×2160 (180 клеток); плотность клеток и бонусов та же
-    x3:     { bots: 5, bonus: 18, W: 6240,  H: 3744, N: 540,  SPEED: 200, edge: 160, spread: 160, greenY: 60, greenX: 1 / 3 },
-    x6:     { bots: 5, bonus: 36, W: 8820,  H: 5292, N: 1080, SPEED: 200, edge: 160, spread: 160, greenY: 60, greenX: 1 / 3 },
-    x9:     { bots: 5, bonus: 54, W: 10800, H: 6480, N: 1620, SPEED: 200, edge: 160, spread: 160, greenY: 60, greenX: 1 / 3 },
+    // большие карты ×3, ×6, ×9 (уменьшены втрое по площади): 3600×2160, 5090×3054, 6240×3744; плотность клеток и бонусов та же
+    x3:     { bots: 5, bonus: 6,  W: 3600, H: 2160, N: 180, SPEED: 200, edge: 160, spread: 160, greenY: 60, greenX: 1 / 3 },
+    x6:     { bots: 5, bonus: 12, W: 5090, H: 3054, N: 360, SPEED: 200, edge: 160, spread: 160, greenY: 60, greenX: 1 / 3 },
+    x9:     { bots: 5, bonus: 18, W: 6240, H: 3744, N: 540, SPEED: 200, edge: 160, spread: 160, greenY: 60, greenX: 1 / 3 },
   };
   let dynMode = false;                // эксперимент: размер клетки следует за числом единиц
   try { dynMode = localStorage.getItem('cells-dyn') === '1'; } catch (e) {}
