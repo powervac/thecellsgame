@@ -493,7 +493,7 @@
   function applyMap() {
     MAP = MAPS[mapMode]; W = MAP.W; H = MAP.H; N = MAP.N; SPEED = MAP.SPEED;
     BOTS = [2, 3, 4, 5, 6].slice(0, MAP.bots);
-    balanceOn = false; $('bal').classList.remove('on'); setPause(false);
+    balanceOn = false; gameT = 0; $('bal').classList.remove('on'); setPause(false);
     buildHud();
     resize();                                         // пересчитать допустимый масштаб
   }
@@ -546,6 +546,7 @@
     if (c.owner === u.owner) { c.units += 1; hitFx(u, c, 'join'); }
     else if (c.units >= 1) { c.units -= 1; hitFx(u, c, 'hit'); }
     else {
+      if (c.owner === 1 && balanceOn) c.recap = gameT + 10;      // враг отбил клетку у выравнивания: 10 секунд считаем её своей и пытаемся вернуть
       c.units = 1 - c.units; c.owner = u.owner; c.orders = []; c.acc = 0;
       hitFx(u, c, 'capture');
     }
@@ -617,7 +618,9 @@
     if (c.stuck > 1.2) nextWp(c);
   }
 
+  let gameT = 0;                                   // игровое время, с
   function update(dt) {
+    gameT += dt;
     for (const c of cells) if (c.owner) c.units += dt * rate(c);
     if (dynMode) {                                   // клетка раздувается от единиц и сдувается, когда они уходят
       for (const c of cells) {
@@ -651,14 +654,14 @@
     // выпуск единиц цепочкой
     for (const c of cells) {
       if (!c.orders.length) { c.acc = 0; continue; }
-      const bm = balanceOn && c.owner === 1 && c.orders.every(o => o.target.owner === 1) ? 9 : 1;   // в режиме выравнивания обмен между своими клетками в 9 раз быстрее обычной высылки
+      const bm = balanceOn && c.owner === 1 && c.orders.every(o => o.target.owner === 1 || o.target.recap > gameT) ? 9 : 1;   // в режиме выравнивания обмен между своими клетками в 9 раз быстрее обычной высылки
       c.acc = Math.min(c.acc + dt * launchRate(c) * bm, 12);
       while (c.acc >= 1 && c.orders.length) {
         if (c.units < 1) break;
         c.rr = (c.rr || 0) % c.orders.length;
         const o = c.orders[c.rr];
         const d = dist(c, o.target) || 1;
-        squads.push({ owner: c.owner, target: o.target, src: c, left: false,
+        squads.push({ owner: c.owner, target: o.target, src: c, left: false, fast: bm > 1,
           x: c.x + (o.target.x - c.x) / d * c.r, y: c.y + (o.target.y - c.y) / d * c.r });
         c.units -= 1; c.acc -= 1; o.remaining--;
         if (o.remaining <= 0) c.orders.splice(c.rr, 1); else c.rr++;
@@ -675,7 +678,7 @@
     }
     // движение: единица не пролетает сквозь клетки, а попадает в первую встреченную
     const step = SPEED * dt;
-    for (const u of squads) {
+    for (const u of squads) for (let sub = u.fast ? 3 : 1; sub > 0 && !u.arrived; sub--) {   // быстрые единицы (режим выравнивания) летят втрое быстрее: три шага с проверкой столкновений
       const t = u.target;
       const tx = t.x - u.x, ty = t.y - u.y, d = Math.sqrt(tx * tx + ty * ty) || 1;
       u.dx = tx / d; u.dy = ty / d;
@@ -747,18 +750,20 @@
     for (const c of own) fut.set(c, c.units - reserved(c) + incoming(c, 1));
     let tot = 0; for (const c of own) tot += fut.get(c);
     const m = tot / own.length;
-    const give = own.filter(c => fut.get(c) > m + 1).sort((a, b) => fut.get(b) - fut.get(a));
+    const give = own.slice().sort((a, b) => fut.get(b) - fut.get(a));
     const need = own.filter(c => fut.get(c) < m - 1);
+    for (const c of cells) if (c.owner > 1 && c.recap > gameT) need.push(c);   // недавно потерянные клетки: ещё 10 секунд посылаем туда единицы, чтобы вернуть
     for (const d of give) {
       need.sort((a, b) => dist(a, d) - dist(b, d));
       for (const r of need) {
-        const surplus = Math.min(fut.get(d) - m, avail(d)), want = m - fut.get(r);
-        if (surplus < 1) break;
+        const lost = r.owner !== 1;
+        const surplus = lost ? Math.min(avail(d), fut.get(d) * .5) : fut.get(d) > m + 1 ? Math.min(fut.get(d) - m, avail(d)) : 0, want = lost ? r.units + 2 - incoming(r, 1) : m - fut.get(r);
+        if (surplus < 1 || r === d) continue;
         if (want < 1) continue;
         const n = Math.floor(Math.min(surplus, want));
         if (n < 1) continue;
         const sent = sendN(d, r, n, true);
-        fut.set(d, fut.get(d) - sent); fut.set(r, fut.get(r) + sent);
+        fut.set(d, fut.get(d) - sent); if (!lost) fut.set(r, fut.get(r) + sent);
       }
     }
   }
