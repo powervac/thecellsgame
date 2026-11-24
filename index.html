@@ -356,9 +356,9 @@
   let last = 0;
 
   const DIFF = {
-    easy:   { interval: 3.0, spend: .7, hoard: 40, buffer: 3, random: true,  defend: false, moveEvery: 9, maxMove: 20 },
-    medium: { interval: 1.6, spend: .55, hoard: 60, buffer: 2, random: false, defend: false, moveEvery: 5, maxMove: 30 },
-    hard:   { interval: 0.8, spend: .5, hoard: 80, buffer: 1, random: false, defend: true,  moveEvery: 3, maxMove: 40 },
+    easy:   { interval: 3.0, spend: .7, actK: .03, hoard: 40, buffer: 3, random: true,  defend: false, moveEvery: 9, maxMove: 20 },
+    medium: { interval: 1.6, spend: .6, actK: .1, hoard: 60, buffer: 2, random: false, defend: false, moveEvery: 5, maxMove: 30 },
+    hard:   { interval: 0.8, spend: .65, actK: .22, hoard: 80, buffer: 1, random: false, defend: true,  moveEvery: 3, maxMove: 40 },
   };
 
   function resize() {
@@ -777,11 +777,17 @@
   // Стратегия: не бросаться на крупные клетки. Тратить не больше доли сил (spend),
   // предпочитать дешёвые захваты (малые клетки: больше клеток при меньшем риске),
   // добивать ослабленных врагов, оборонять свои клетки, оставлять резерв.
+  // за один ход бот делает несколько действий: чем больше у него клеток, тем больше (на большой карте иначе он не успевает за игроком)
   function botStep(B) {
+    const n = Math.min(14, 1 + Math.floor(cells.reduce((a, c) => a + (c.owner === B ? 1 : 0), 0) * DIFF[diff].actK));
+    for (let i = 0; i < n; i++) if (!botAct(B)) break;
+  }
+
+  function botAct(B) {
     const cfg = DIFF[diff];
     const myCells = cells.filter(c => c.owner === B);
     const mine = myCells.filter(c => avail(c) >= 2);
-    if (!mine.length) return;
+    if (!mine.length) return false;
     const total = mine.reduce((a, c) => a + avail(c), 0);
     const myStr = strengthOf(B);
 
@@ -793,7 +799,7 @@
           const needD = Math.ceil(threat + 2);
           const helpers = mine.filter(m => m !== c).sort((a, b) => dist(a, c) - dist(b, c));
           const sum = helpers.reduce((a, h) => a + avail(h), 0);
-          if (sum >= needD) { spend(helpers, c, needD); return; }
+          if (sum >= needD) { spend(helpers, c, needD); return true; }
         }
       }
     }
@@ -812,15 +818,18 @@
     }
 
     const cap = myCells.length <= 1 ? total : cfg.spend * total;   // в начале игры можно тратить всё на рост
-    const options = [];
-    for (const t of cells) {
-      if (t.owner === B) continue;
+    const options = [], str = {};
+    // рассматриваем только ближайшие к нам клетки (на большой карте иначе перебор слишком долгий)
+    const cand = cells.filter(t => t.owner !== B)
+      .map(t => ({ t, d: mine.reduce((m, c) => Math.min(m, dist(c, t)), Infinity) }))
+      .sort((a, b) => a.d - b.d).slice(0, 30).map(x => x.t);
+    for (const t of cand) {
       // в режиме живых клеток бот копит единицы, чтобы раздуть клетки, и не атакует врагов слишком рано
       if (dynMode && t.owner && total < cfg.hoard * myCells.length) continue;
       // нейтральную клетку, которую уже атакует кто-то другой, не трогаем: иначе мы лишь ослабим её для третьего
       if (t.owner === 0 && hostileIn(t, B) > 0) continue;
       // стрелять можно только из клеток, у которых путь к цели не перекрыт другой клеткой
-      const sorted = mine.filter(m => !pathBlocker(m, t)).sort((a, b) => dist(a, t) - dist(b, t));
+      const sorted = mine.map(m => ({ m, d: dist(m, t) })).sort((a, b) => a.d - b.d).slice(0, 12).map(x => x.m).filter(m => !pathBlocker(m, t));   // ближайшие клетки, у которых свободен путь
       if (!sorted.length) continue;
       const tt = travel(sorted[0], t);
       const base = t.units + cfg.buffer - incoming(t, B);
@@ -843,7 +852,8 @@
       const enemy = t.owner !== 0;
       let gain = rate(t) * (enemy ? 2.2 : 1) + 0.3;                 // +0.3: сама по себе клетка тоже ценна
       if (enemy) {
-        if (strengthOf(t.owner) < myStr) gain *= 1.4;               // добиваем более слабого
+        if (str[t.owner] === undefined) str[t.owner] = strengthOf(t.owner);
+        if (str[t.owner] < myStr) gain *= 1.4;               // добиваем более слабого
         if (need < 0.5 * total) gain *= 1.3;                        // ослабленная клетка врага — лёгкая добыча
       }
       let score = gain / (need + dist(sorted[0], t) / 20 + 3);
@@ -851,10 +861,11 @@
       score *= 0.85 + Math.random() * 0.3;                          // немного непредсказуемости
       options.push({ t, use, need, score });
     }
-    if (!options.length) return;
+    if (!options.length) return false;
     const pick = cfg.random ? options[Math.floor(Math.random() * options.length)]
                             : options.reduce((a, b) => (b.score > a.score ? b : a));
     spend(pick.use, pick.t, pick.need);
+    return true;
   }
 
   // бот двигает клетки: небольшие клетки сближаются с целью, чтобы единицам лететь меньше
