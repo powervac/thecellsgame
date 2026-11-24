@@ -9,13 +9,15 @@
   * { box-sizing:border-box; }
   html,body { margin:0; height:100%; background:var(--bg); color:var(--text);
     font-family:"Segoe UI",system-ui,-apple-system,Roboto,sans-serif; overflow:hidden; user-select:none; -webkit-user-select:none; }
-  canvas#c { position:fixed; inset:0; width:100%; height:100%; touch-action:none; display:block; }
+  canvas#c { position:fixed; left:0; top:0; width:100%; height:calc(100% - var(--barH,72px)); touch-action:none; display:block; }
   .pill { position:fixed; background:var(--panel); border:1.5px solid var(--line); border-radius:22px;
     box-shadow:0 0 18px rgba(40,90,220,.25), inset 0 0 14px rgba(60,110,255,.10); }
-  #hud { top:18px; left:22px; display:flex; align-items:center; padding:0 22px; height:46px; font-size:18px; font-weight:600;
-    font-variant-numeric:tabular-nums; pointer-events:none; white-space:nowrap; }
-  #hud .sep { width:1px; height:24px; background:var(--line); margin:0 18px; }
-  #hud .who { display:flex; align-items:center; gap:10px; }
+  #bar { position:fixed; left:0; right:0; bottom:0; height:var(--barH,72px); display:flex; align-items:center; justify-content:space-between; gap:16px;
+    padding:0 16px; background:var(--panel); border-top:1.5px solid var(--line); box-shadow:0 -4px 22px rgba(40,90,220,.25); z-index:5; }
+  #hud { flex:1; display:flex; flex-wrap:wrap; align-items:center; gap:4px 24px; font-size:clamp(13px,1.5vw,19px); font-weight:600;
+    font-variant-numeric:tabular-nums; pointer-events:none; min-width:0; }
+  #hud .sep { display:none; }
+  #hud .who { display:flex; align-items:center; gap:8px; white-space:nowrap; }
   #hud b { font-weight:700; }
   #bal { top:74px; left:50%; transform:translateX(-50%); padding:10px 26px; font-size:20px; font-weight:800; letter-spacing:.5px; display:none; pointer-events:none; color:#fff; background:rgba(20,110,60,.92); border-color:#3ddc84; box-shadow:0 0 24px rgba(61,220,132,.7); animation:balp 1.4s ease-in-out infinite; white-space:nowrap; }
   #bal.on { display:block; }
@@ -38,7 +40,7 @@
   #hint { bottom:22px; left:22px; display:flex; align-items:center; gap:14px; padding:10px 22px 10px 16px;
     font-size:15px; line-height:1.25; max-width:min(60vw,330px); pointer-events:none; }
   #hint svg { width:28px; height:28px; flex:none; opacity:.9; }
-  #mini { position:fixed; bottom:22px; right:22px; width:200px; height:120px; border-radius:14px; pointer-events:auto; cursor:pointer;
+  #mini { flex:none; height:calc(var(--barH,72px) - 14px); width:calc((var(--barH,72px) - 14px) * 1.6667); border-radius:10px; pointer-events:auto; cursor:pointer;
     border:1.5px solid var(--line); background:var(--panel); box-shadow:0 0 18px rgba(40,90,220,.25); }
   #overlay { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(2,6,22,.62);
   }
@@ -56,19 +58,19 @@
   .play { width:100%; padding:13px; border:0; border-radius:16px; color:#fff; font-size:17px; font-weight:700; cursor:pointer;
     background:linear-gradient(180deg,#4aa0ff,#1f62e8); box-shadow:0 0 22px rgba(47,140,255,.6); }
   .play:hover { filter:brightness(1.12); }
-  @media (max-width:640px) { #mute{top:10px;right:118px;width:40px;height:40px} #hud { font-size:12px; padding:0 10px; height:40px; top:10px; left:10px } #hud .sep{margin:0 8px} #hud .sep{margin:0 10px}
+  @media (max-width:640px) { #mute{top:10px;right:118px;width:40px;height:40px} 
     .dot{width:11px;height:11px} #restart{top:10px;right:10px;height:40px;font-size:14px;padding:0 14px} #restart svg{width:20px;height:20px}
-    #hint{font-size:12px;left:10px;bottom:10px} #mini{width:140px;height:84px;right:10px;bottom:10px} }
+    #hint{font-size:12px;left:10px;bottom:10px} }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="hud" class="pill"></div>
+
 <div id="pause" class="pill">⏸ ПАУЗА — P, чтобы продолжить</div>
 <div id="bal" class="pill">⚖ РЕЖИМ ВЫРАВНИВАНИЯ ВКЛЮЧЁН — F, чтобы выключить</div>
 <button id="restart" class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 3v5h-5"/></svg>Заново</button>
 <button id="mute" class="pill" title="Звук"><svg class="on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg><svg class="off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="m16 9 5 6M21 9l-5 6"/></svg></button>
-<canvas id="mini" width="400" height="240"></canvas>
+<div id="bar"><div id="hud"></div><canvas id="mini" width="400" height="240"></canvas></div>
 <div id="overlay">
   <div class="card">
     <h1 id="title">The Cells Game</h1>
@@ -344,16 +346,16 @@
   const ptrs = new Map(), keys = new Set();
   const clampZ = z => Math.max(minZoom, Math.min(maxZoom, z));
   function clampCam() {
-    const vw = innerWidth / zoom, vh = innerHeight / zoom;
+    const vw = innerWidth / zoom, vh = VH / zoom;
     cam.x = vw >= W ? (W - vw) / 2 : Math.max(0, Math.min(W - vw, cam.x));
     cam.y = vh >= H ? (H - vh) / 2 : Math.max(0, Math.min(H - vh, cam.y));
   }
-  function centerOn(x, y) { cam.x = x - innerWidth / zoom / 2; cam.y = y - innerHeight / zoom / 2; clampCam(); }
+  function centerOn(x, y) { cam.x = x - innerWidth / zoom / 2; cam.y = y - VH / zoom / 2; clampCam(); }
   function zoomAt(cx, cy, nz) {
     const wx = cx / zoom + cam.x, wy = cy / zoom + cam.y;
     zoom = clampZ(nz); cam.x = wx - cx / zoom; cam.y = wy - cy / zoom; clampCam();
   }
-  const inView = (x, y, m) => x >= cam.x - m && x <= cam.x + innerWidth / zoom + m && y >= cam.y - m && y <= cam.y + innerHeight / zoom + m;
+  const inView = (x, y, m) => x >= cam.x - m && x <= cam.x + innerWidth / zoom + m && y >= cam.y - m && y <= cam.y + VH / zoom + m;
   let cells = [], squads = [];
   let state = 'menu';            // menu | play | end
   let diff = 'medium';
@@ -372,11 +374,15 @@
     hard:   { interval: 0.8, spend: .65, actK: .22, hoard: 80, buffer: 1, random: false, defend: true,  moveEvery: 3, maxMove: 40 },
   };
 
+  let VH = innerHeight;               // высота игрового поля: весь экран за вычетом нижней панели (~10%)
   function resize() {
     dpr = window.devicePixelRatio || 1;
+    const barH = Math.max(64, Math.round(innerHeight * .1));
+    document.documentElement.style.setProperty('--barH', barH + 'px');
+    VH = innerHeight - barH;
     canvas.width = innerWidth * dpr;
-    canvas.height = innerHeight * dpr;
-    minZoom = Math.min(innerWidth / W, innerHeight / H);   // можно отдалить до всей карты
+    canvas.height = VH * dpr;
+    minZoom = Math.min(innerWidth / W, VH / H);   // можно отдалить до всей карты
     maxZoom = Math.max(1.8, minZoom * 2);
     zoom = clampZ(zoom); clampCam();
   }
@@ -1261,7 +1267,7 @@
 
     // летящие единицы: все единицы одного цвета выводятся разом (один путь и одна заливка), число единиц почти не влияет на скорость
     {
-      const vx0 = cam.x - 30, vy0 = cam.y - 30, vx1 = cam.x + innerWidth / zoom + 30, vy1 = cam.y + innerHeight / zoom + 30;
+      const vx0 = cam.x - 30, vy0 = cam.y - 30, vx1 = cam.x + innerWidth / zoom + 30, vy1 = cam.y + VH / zoom + 30;
       const fancy = squads.length < 1500;
       for (let o = 1; o <= BOTS.length + 1; o++) {
         const col = UCOL[o], core = UCORE[o];
@@ -1395,7 +1401,7 @@
     }
     // прямоугольник того, что сейчас видно на экране
     g.strokeStyle = 'rgba(255,255,255,.85)'; g.lineWidth = 1.5;
-    g.strokeRect(12 + cam.x * sx, 12 + cam.y * sy, innerWidth / zoom * sx, innerHeight / zoom * sy);
+    g.strokeRect(12 + cam.x * sx, 12 + cam.y * sy, innerWidth / zoom * sx, VH / zoom * sy);
   }
 
   const txtCache = {};
@@ -1435,7 +1441,7 @@
       if (dragging || box) {                                       // при выделении или перетаскивании у края экрана камера едет сама
         const E = 36;
         if (lastScreen.x < E) mx -= 1; if (lastScreen.x > innerWidth - E) mx += 1;
-        if (lastScreen.y < E + 50) my -= 1; if (lastScreen.y > innerHeight - E) my += 1;
+        if (lastScreen.y < E + 50) my -= 1; if (lastScreen.y > VH - E) my += 1;
       }
       if (mx || my) {
         cam.x += mx * sp; cam.y += my * sp; clampCam();
